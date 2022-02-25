@@ -5,10 +5,10 @@ Using Googles OR-Tools we want to create an automatic shift calculator with the 
 - shifts
     - Monday
         - 13:00 to 13:30 (next day)
-        - 09:00 to 20:00
+        - 14:00 to 20:00
     - Thuesday
         - 13:00 to 9:00 (next day)
-        - 09:00 to 20:00
+        - 14:00 to 20:00
     - Wednesday
         - 13:00 to 9:00 (next day)
         - 14:00 to 20:00
@@ -20,15 +20,15 @@ Using Googles OR-Tools we want to create an automatic shift calculator with the 
         - 14:00 to 20:00
     - Saturday
         - 13:00 to 13:30 (next day)
-        - 09:00 to 20:00
+        - 14:00 to 20:00
             - every second week
     - Sunday
         - 13:00 to 13:30 (next day)
-        - 09:00 to 20:00
+        - 14:00 to 20:00
             - every second week
     - holidays like Mo-Fri
         - except Wednesday, Thursday, Friday
-            - 09:00 to 20:00
+            - 13:00 to 13:30 for all night shifts
 - worker conf
     - hours per week
     - count of overtime

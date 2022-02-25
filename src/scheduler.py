@@ -1,8 +1,97 @@
 """Example of a simple nurse scheduling problem."""
 from ortools.sat.python import cp_model
+import csv
+import configparser
+import calendar
+import datetime
+import os
+from collections import defaultdict
+
+header = ['name', 'hours_per_week', 'overtime', 'available_for_shift', 'not relief']
+w1 = ['Paula', '40', '12', 'n,d,n+d', '']
+w2 = ['Renate', '35', '-5', 'n,d', 'Paula']
+
+vacationFile = "vacation.csv"
+workersFile = "workers.csv"
+configFile = "config.ini"
 
 
 def main():
+
+    print("Welcome to the shift calculator!")
+
+    deleteGeneratedFiles()
+
+    createdConfigs = False
+    try:
+        f = open(workersFile)
+    except IOError:
+        #if no workers config: generate one
+        with open(workersFile, newline='', mode='w') as employee_file:
+            writer = csv.writer(employee_file)
+
+            #generate example data
+            writer.writerow(header)
+            writer.writerow(w1)
+            writer.writerow(w2)
+
+            print("created %s" % workersFile)
+
+            createdConfigs = True
+
+    # if no global config: generate on
+    try:
+        config = configparser.ConfigParser()
+        config.sections()
+        with open(configFile) as f:
+            config.read_file(f)
+    except IOError:
+        config = configparser.ConfigParser()
+        config.sections()
+        with open(configFile, mode='w') as config_file:
+            config.add_section('General')
+            config.set('General','NotTwoWorkshifts',"True")
+            config.set('General','EveryWorkerFreeWeekend', "True")
+            config.set('General','WorkerFreeDaysEqualWeekendDaysPlusPublicHolidays', "True")
+            config.set('General','BalanceOvertime', "True")
+            config.write(config_file)
+            config_file.close()
+
+        print("created %s" % configFile)
+
+        createdConfigs = True
+
+    try:
+        f = open(vacationFile)
+    except IOError:
+        #if no month config: generate one
+        with open(vacationFile, newline='', mode='w') as month_file:
+            writer = csv.writer(month_file)
+
+            now = datetime.datetime.now()
+            list1 = ["workers"]
+            list1.extend(range(1, calendar.monthrange(now.year, now.month)[1]+1))
+            writer.writerow(list1)
+
+            #add workers
+            with open(workersFile, newline='') as employee_file:
+                reader = csv.DictReader(employee_file)
+                columns = defaultdict(list)
+
+                for row in reader:
+                    for (k,v) in row.items():
+                        columns[k].append(v)
+                for workers in columns['name']:
+                    writer.writerow([workers])
+
+            print("created %s" % vacationFile)
+
+            createdConfigs = True
+
+    if createdConfigs:
+        return
+
+
     # Data.
     num_nurses = 4
     num_shifts = 3
@@ -104,6 +193,13 @@ def main():
     print('  - wall time      : %f s' % solver.WallTime())
     print('  - solutions found: %i' % solution_printer.solution_count())
 
+def deleteGeneratedFiles():
+    if os.path.exists(vacationFile):
+        os.remove(vacationFile)
+    if os.path.exists(workersFile):
+        os.remove(workersFile)
+    if os.path.exists(configFile):
+        os.remove(configFile)
 
 if __name__ == '__main__':
     main()

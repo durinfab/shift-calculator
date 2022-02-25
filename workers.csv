@@ -1,0 +1,3 @@
+name,hours_per_week,overtime,available_for_shift,not relief
+Paula,40,12,"n,d,n+d",
+Renate,35,-5,"n,d",Paula
