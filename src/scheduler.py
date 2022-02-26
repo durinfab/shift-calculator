@@ -55,9 +55,13 @@ def main():
     allShifts = ["d", "n","wn"]
     allEmployees = workerColumns['name']
     all_days = range(1, calendar.monthrange(now.year, now.month)[1]+1)
-    dayShiftHours = 6
-    nightShiftHoursWeekend = 17,5
-    nightShiftHoursNotWeekend = 18,25
+    dayShiftHours = 360
+    nightShiftHoursWeekend = 1050 #17,5
+    nightShiftHoursNotWeekend = 1095 #18,25
+    nightShiftHoursNotWeekendHWK = 855 #14,25
+
+    
+    worktimes_per_worker = {}
 
     #add all possible results
     #search domain
@@ -67,6 +71,7 @@ def main():
         for n in workerColumns['name']:
 
             workerIndex = workerColumns['name'].index(n)
+            worktimes_per_worker[n] = []
 
             #get all available shift-kinds for employee
             availShifts = workerColumns['available_for_shift'][workerIndex]
@@ -78,10 +83,14 @@ def main():
                     for s in normalShifts:
                         if s in avshifts:
                             shifts[(n, d, s)] = model.NewBoolVar('shift_n%sd%ss%s' % (n, d, s))
+
                 else:
                     for s in weekendShifts:
                         if s in avshifts:
                             shifts[(n, d, s)] = model.NewBoolVar('shift_n%sd%ss%s' % (n, d, s))
+                            
+    #all reqired minutes
+    reqMinutes = 0
 
     # Each shift is assigned to exactly one employee in the schedule period.
     for d in all_days:
@@ -93,6 +102,7 @@ def main():
             if not onVacation(n,d) and doesShift(n,allShifts[0]):
                 freeEmps.append(n)
         model.Add(sum(shifts[(a, d, allShifts[0])] for a in freeEmps) == 1)
+        reqMinutes += dayShiftHours
         
         if weekday != 4 and weekday != 5:
             # day and normal night shift
@@ -101,6 +111,10 @@ def main():
                 if not onVacation(n,d) and doesShift(n,allShifts[1]):
                     freeEmps.append(n)
             model.Add(sum(shifts[(a, d, allShifts[1])] for a in freeEmps) == 1)
+            if weekday == 1 or weekday == 2 or weekday == 3:
+                reqMinutes += nightShiftHoursNotWeekendHWK
+            else:
+                reqMinutes += nightShiftHoursNotWeekend
         else:
             # day and weekend night shift
             freeEmps = []
@@ -108,6 +122,7 @@ def main():
                 if not onVacation(n,d) and doesShift(n,allShifts[2]):
                     freeEmps.append(n)
             model.Add(sum(shifts[(a, d, allShifts[2])] for a in freeEmps) == 1)
+            reqMinutes += nightShiftHoursWeekend
 
 
     # Each nurse works at most one shift per day.
@@ -119,73 +134,88 @@ def main():
     # min_shifts_per_nurse shifts. If this is not possible, because the total
     # number of shifts is not divisible by the number of nurses, some nurses will
     # be assigned one more shift.
-    #min_shifts_per_nurse = (num_shifts * num_days) // num_nurses
-    #if num_shifts * num_days % num_nurses == 0:
-    #    max_shifts_per_nurse = min_shifts_per_nurse
-    #else:
-    #    max_shifts_per_nurse = min_shifts_per_nurse + 1
-    #for n in all_nurses:
-    #    num_shifts_worked = []
-    #    for d in all_days:
-    #        for s in all_shifts:
-    #            num_shifts_worked.append(shifts[(n, d, s)])
-    #    model.Add(min_shifts_per_nurse <= sum(num_shifts_worked))
-    #    model.Add(sum(num_shifts_worked) <= max_shifts_per_nurse)
+
+
+    #the min work which needs to be done for each employee
+    min_minutes_per_employee = reqMinutes // len(workerColumns['name'])
+
+    # the max work which all employees can fulfill
+    max_work = 0
+
+    hours_per_week = workerColumns['hours_per_week']
+    for n in workerColumns['name']:
+
+        #set worktime constraints
+        #short night shift not weekend
+        tmpDays = [int]
+        for e in list(all_days):
+            date = datetime.date(now.year, now.month, e)
+            weekday = date.weekday()
+            if ((weekday == 1 or weekday == 2 or weekday == 3) and weekday != 4 and weekday != 5):
+                tmpDays.append(e)
+        for d in range(len(tmpDays)):
+            if (n, d, 'n') in shifts:
+                ab = model.NewIntVar(0, nightShiftHoursNotWeekendHWK, "int%s%i" % (n,d))
+                model.Add(ab == nightShiftHoursNotWeekendHWK).OnlyEnforceIf(shifts[(n, d, 'n')])
+                model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'n')].Not())
+                worktimes_per_worker[n].append(ab)
+
+        #long night shift not weekend
+        tmpDays = [int]
+        for e in list(all_days):
+            date = datetime.date(now.year, now.month, e)
+            weekday = date.weekday()
+            if ((weekday != 1 or weekday != 2 or weekday != 3) and weekday != 4 and weekday != 5):
+                tmpDays.append(e)
+        for d in tmpDays:
+            if (n, d, 'n') in shifts:
+                ab = model.NewIntVar(0, nightShiftHoursNotWeekend, "int%s%i" % (n,d))
+                model.Add(ab == nightShiftHoursNotWeekend).OnlyEnforceIf(shifts[(n, d, 'n')])
+                model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'n')].Not())
+                worktimes_per_worker[n].append(ab)
+            
+
+        for d in list(all_days):
+             if (n, d, 'n') in shifts:
+                ab = model.NewIntVar(0, dayShiftHours, "int%s%i" % (n,d))
+                model.Add(ab == dayShiftHours).OnlyEnforceIf(shifts[(n, d, 'n')])
+                model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'n')].Not())
+                worktimes_per_worker[n].append(ab)
+
+        tmpDays = [int]
+        for e in list(all_days):
+            date = datetime.date(now.year, now.month, e)
+            weekday = date.weekday()
+            if (weekday == 4 and weekday == 5):
+                tmpDays.append(e)
+        for d in tmpDays:
+            if (n, d, 'n') in shifts:
+                ab = model.NewIntVar(0, nightShiftHoursWeekend, "int%s%i" % (n,d))
+                model.Add(ab == nightShiftHoursWeekend).OnlyEnforceIf(shifts[(n, d, 'n')])
+                model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'n')].Not())
+                worktimes_per_worker[n].append(ab)
+
+        #min worktime
+        minworktime = min(min_minutes_per_employee, int(hours_per_week[workerColumns['name'].index(n)]))
+        maxworktime = (int(hours_per_week[workerColumns['name'].index(n)]) // 7) * len(all_days) * 60
+
+        max_work += maxworktime
+
+        wtn = model.NewIntVar(minworktime, maxworktime, "worktime%s" % n)
+        model.Add(sum(worktimes_per_worker[n]) == wtn)
+
+    # some checks that should avoid wrong calculation
+    if max_work < reqMinutes:
+        print('ERROR: The current worker setup cannot fulfill the requirements!')
+        sys.exit()
 
     # Creates the solver and solve.
     solver = cp_model.CpSolver()
-    #solver.parameters.linearization_level = 0
-    # Enumerate all solutions.
-    #solver.parameters.enumerate_all_solutions = True
-
-
-    class NursesPartialSolutionPrinter(cp_model.CpSolverSolutionCallback):
-        """Print intermediate solutions."""
-
-        def __init__(self, shifts, allDays, allShifts, allEmployees, limit):
-            cp_model.CpSolverSolutionCallback.__init__(self)
-            self._shifts = shifts
-            self._allShifts = allShifts
-            self._allEmployees = allEmployees
-            self._allDays = allDays
-            self._solution_count = 0
-            self._solution_limit = limit
-
-        def on_solution_callback(self):
-            self._solution_count += 1
-            print('Solution %i' % self._solution_count)
-            for d in self._allDays:
-                print('Day %i' % d)
-                for n in self._allEmployees:
-                    is_working = False
-                    for s in self._allShifts:
-                        if (n, d, s) in self._shifts:
-                            print("lamo %s" % n)
-                            print("lamo %s" % d)
-                            print("lamo %s" % s)
-                            if solver.Value(self._shifts[(n, d, s)]) == 1:
-                                is_working = True
-                                print('  Employee %s works shift %s' % (n, s))
-                    if not is_working:
-                        print('  Employee {} does not work'.format(n))
-            if self._solution_count >= self._solution_limit:
-                print('Stop search after %i solutions' % self._solution_limit)
-                self.StopSearch()
-
-        def solution_count(self):
-            return self._solution_count
-
-    # Display the first five solutions.
-    solution_limit = 5
-    solution_printer = NursesPartialSolutionPrinter(shifts,
-                                                    all_days, allShifts, allEmployees,
-                                                    solution_limit)
-
     status = solver.Solve(model)
 
     if status == cp_model.OPTIMAL:
-       print('Solution:')
-       for d in all_days:
+        print('Solution:')
+        for d in all_days:
             print('Day %i' % d)
             for n in allEmployees:
                 is_working = False
@@ -196,6 +226,11 @@ def main():
                             print('  Employee %s works shift %s' % (n, s))
                 if not is_working:
                     print('  Employee {} does not work'.format(n))
+        print('')
+        print('Worktime:')
+        for n in allEmployees:
+            minutes = solver.Value(sum(worktimes_per_worker[n]))
+            print('  Employee %s works %i minutes' % (n, minutes))
     else:
         print('No optimal solution found !')
 
@@ -288,7 +323,7 @@ def onVacation(name, day):
     return  vacationColumns[str(day)][i] == "yes"
 
 def doesShift(name, shift):
-    i = vacationColumns['workers'].index(name)
+    i = workerColumns['name'].index(name)
     availShifts = workerColumns['available_for_shift'][i]
     avshifts = availShifts.split(',')
     return shift in avshifts
