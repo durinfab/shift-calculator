@@ -1,6 +1,6 @@
 name,hours_per_week,overtime,available_for_shift,not relief
 Paula,40,12,"n,d,wn"
-James,40,12,"n"
+James,40,12,"n,d,wn"
 Torsten,40,12,"n,d,wn"
 Thira,40,12,"n,d,wn"
 Tessa,40,12,"n,d,wn"
