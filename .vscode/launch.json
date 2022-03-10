@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Aktuelle Datei",
+            "name": "Python: Run",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": "src/scheduler.py",
             "console": "integratedTerminal"
         }
     ]
