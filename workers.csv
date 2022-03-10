@@ -1,9 +1,9 @@
-name,hours_per_week,overtime,available_for_shift,not relief
-Paula,40,12,"n,d,wn"
-James,40,12,"n,d,wn"
-Torsten,40,12,"n,d,wn"
-Thira,40,12,"n,d,wn"
-Tessa,40,12,"n,d,wn"
-Tessa1,40,12,"n,d,wn"
-Tessa2,40,12,"n,d,wn"
+name,hours_per_week,overtime,available_for_shift,not_relief
+Paula,40,12,"n,d,wn",James
+James,40,12,"n,d,wn",Paula
+Torsten,40,12,"n,d,wn",
+Thira,40,12,"n,d,wn",
+Tessa,40,12,"n,d,wn",
+Tessa1,40,12,"n,d,wn",
+Tessa2,40,12,"n,d,wn",
 

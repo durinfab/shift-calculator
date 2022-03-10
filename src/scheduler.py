@@ -23,6 +23,7 @@ free_weekend = True
 not_two_consec_nights = True
 respect_worktime = True
 assure_free_days = True
+respect_following_employee = True
 
 def main():
 
@@ -133,6 +134,23 @@ def main():
                 model.Add(sum(shifts[(a, d, allShifts[2])] for a in freeEmps) == 1)
                 reqMinutes += nightShiftHoursWeekend
 
+    if respect_following_employee:
+        for n in allEmployees:
+            for m in allEmployees:
+                if shouldNotRelief(n, m):
+                    for d in all_days:
+                        if (n,d,'d') in shifts and (m,d,'n') in shifts:
+                            model.Add(shifts[(m,d,'n')] == 0).OnlyEnforceIf(shifts[(n,d,'d')])
+
+                        if (n,d,'d') in shifts and (m,d,'wn') in shifts:
+                            model.Add(shifts[(m,d,'wn')] == 0).OnlyEnforceIf(shifts[(n,d,'d')])
+
+                        if (n,d,'wn') in shifts and (m,d+1,'d') in shifts:
+                            model.Add(shifts[(m,d+1,'d')] == 0).OnlyEnforceIf(shifts[(n,d,'wn')])
+
+                        if (n,d,'n') in shifts and (m,d+1,'d') in shifts:
+                            model.Add(shifts[(m,d+1,'d')] == 0).OnlyEnforceIf(shifts[(n,d,'n')])
+            
     if one_shift_per_day:
         #only one shift per day
         for n in allEmployees:
@@ -209,9 +227,9 @@ def main():
                     collected_free_days.append(i)
                     all_emp_free_days.append(i)
 
-                if (n,d,'d') in shifts and (n,d,'nw') in shifts:
+                if (n,d,'d') in shifts and (n,d,'wn') in shifts:
                     i = model.NewBoolVar('freeday_%s_%s' % (n, d))
-                    model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'nw')]]) == 0).OnlyEnforceIf(i)  
+                    model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'wn')]]) == 0).OnlyEnforceIf(i)  
                     collected_free_days.append(i)
                     all_emp_free_days.append(i)
             model.Add(sum(collected_free_days) >= free_days_count)
@@ -228,16 +246,16 @@ def main():
                         model.Add(sum([shifts[(n,d,'n')], shifts[(n,d+1,'n')]]) <= 1)
                         
                 if (n,d,'n') in shifts:
-                    if (n,d+1,'nw') in shifts:
-                        model.Add(sum([shifts[(n,d,'n')], shifts[(n,d+1,'nw')]]) <= 1)
+                    if (n,d+1,'wn') in shifts:
+                        model.Add(sum([shifts[(n,d,'n')], shifts[(n,d+1,'wn')]]) <= 1)
                         
-                if (n,d,'nw') in shifts:
+                if (n,d,'wn') in shifts:
                     if (n,d+1,'n') in shifts:
-                        model.Add(sum([shifts[(n,d,'nw')], shifts[(n,d+1,'n')]]) <= 1)
+                        model.Add(sum([shifts[(n,d,'wn')], shifts[(n,d+1,'n')]]) <= 1)
                         
-                if (n,d,'nw') in shifts:
-                    if (n,d+1,'nw') in shifts:
-                        model.Add(sum([shifts[(n,d,'nw')], shifts[(n,d+1,'nw')]]) <= 1)
+                if (n,d,'wn') in shifts:
+                    if (n,d+1,'wn') in shifts:
+                        model.Add(sum([shifts[(n,d,'wn')], shifts[(n,d+1,'wn')]]) <= 1)
                     
 
 
@@ -447,6 +465,12 @@ def doesShift(name, shift):
     availShifts = workerColumns['available_for_shift'][i]
     avshifts = availShifts.split(',')
     return shift in avshifts
+
+def shouldNotRelief(empl, next):
+    i = workerColumns['name'].index(empl)
+    relief = workerColumns['not_relief'][i]
+    avshifts = relief.split(',')
+    return next in avshifts
 
 if __name__ == '__main__':
     main()
