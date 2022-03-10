@@ -6,12 +6,12 @@ import configparser
 import calendar
 import datetime
 import os
+import holidays
 from collections import defaultdict
 
 header = ['name', 'hours_per_week', 'overtime', 'available_for_shift', 'not relief']
 w1 = ['Paula', '40', '12', 'd,n,wn', '']
 w2 = ['Renate', '35', '-5', 'd,n', 'Paula']
-
 vacationFile = "vacation.csv"
 workersFile = "workers.csv"
 configFile = "config.ini"
@@ -22,6 +22,7 @@ one_shift_per_day = True
 free_weekend = True
 not_two_consec_nights = True
 respect_worktime = True
+assure_free_days = True
 
 def main():
 
@@ -85,12 +86,12 @@ def main():
                 if weekday != 4 and weekday != 5:
                     for s in normalShifts:
                         if doesShift(n,s):
-                            shifts[(n, d, s)] = model.NewBoolVar('shift_n%sd%ss%s' % (n, d, s))
+                            shifts[(n, d, s)] = model.NewBoolVar('shift_%s_%s_%s' % (n, d, s))
 
                 else:
                     for s in weekendShifts:
                         if doesShift(n,s):
-                            shifts[(n, d, s)] = model.NewBoolVar('shift_n%sd%ss%s' % (n, d, s))
+                            shifts[(n, d, s)] = model.NewBoolVar('shift_%s_%s_%s' % (n, d, s))
                             
     #all reqired minutes
     reqMinutes = 0
@@ -151,7 +152,7 @@ def main():
                 date = datetime.date(now.year, now.month, d)
                 weekday = date.weekday()
                 if weekday == 4:
-                    i = model.NewBoolVar('weekend_n%sd%ss' % (n, d))
+                    i = model.NewBoolVar('weekend_%s_%s' % (n, d))
                     freeWeekend = []
                     good = True
                     if (n,d,'wn') in shifts:
@@ -183,9 +184,37 @@ def main():
                         model.Add(sum(freeWeekend) == 0).OnlyEnforceIf(i)
                         collectedWeekends.append(i)
                         all_weekends.append(i)
-            print(collectedWeekends)
-            #model.AddBoolOr(collectedWeekends)
             model.Add(sum(collectedWeekends) >= 1)
+
+    free_days_count = 0
+    if assure_free_days:
+        de_bb_holidays = holidays.country_holidays('DE', subdiv='BB')
+        for d in all_days:
+            date = datetime.date(now.year, now.month, d)
+            #check holiday
+            if date in de_bb_holidays:
+                free_days_count = free_days_count + 1
+            #check weekend
+            elif date.weekday() == 5 or date.weekday() == 6:
+                free_days_count = free_days_count + 1
+
+        all_emp_free_days = []
+        for n in allEmployees:
+            collected_free_days = []
+            for d in all_days:
+                # count free days of employee
+                if (n,d,'d') in shifts and (n,d,'n') in shifts:
+                    i = model.NewBoolVar('freeday_%s_%s' % (n, d))
+                    model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'n')]]) == 0).OnlyEnforceIf(i)  
+                    collected_free_days.append(i)
+                    all_emp_free_days.append(i)
+
+                if (n,d,'d') in shifts and (n,d,'nw') in shifts:
+                    i = model.NewBoolVar('freeday_%s_%s' % (n, d))
+                    model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'nw')]]) == 0).OnlyEnforceIf(i)  
+                    collected_free_days.append(i)
+                    all_emp_free_days.append(i)
+            model.Add(sum(collected_free_days) >= free_days_count)
 
 
     if not_two_consec_nights:
@@ -279,7 +308,7 @@ def main():
 
             max_work += maxworktime
 
-            wtn = model.NewIntVar(minworktime, maxworktime, "worktime%s" % n)
+            wtn = model.NewIntVar(minworktime, maxworktime, "worktime_%s" % n)
             model.Add(sum(worktimes_per_worker[n]) == wtn)
 
     # some checks that should avoid wrong calculation
@@ -304,8 +333,6 @@ def main():
                         if solver.Value(shifts[(n, d, s)]) == 1:
                             is_working = True
                             print('  Employee %s works shift %s' % (n, s))
-                #if not is_working:
-                    #print('  Employee {} does not work'.format(n))
         print('')
         print('Worktime:')
         for n in allEmployees:
@@ -318,6 +345,12 @@ def main():
             val = solver.Value(n)
             if val == 1:
                 print('weekend free %s' % (n))
+        print('')
+        print('free days:')
+        for n in range(len(all_emp_free_days)):
+            a = solver.Value(all_emp_free_days[n])
+            if a == True:
+                print(all_emp_free_days[n])
     else:
         print('No optimal solution found !')
 
