@@ -278,7 +278,7 @@ def main():
                 weekday = date.weekday()
                 if weekday == 1 or weekday == 2 or weekday == 3:
                     tmpDays.append(e)
-            for d in range(len(tmpDays)):
+            for d in tmpDays:
                 if (n, d, 'n') in shifts:
                     ab = model.NewIntVar(0, nightShiftHoursNotWeekendHWK, "int%s%in" % (n,d))
                     model.Add(ab == nightShiftHoursNotWeekendHWK).OnlyEnforceIf(shifts[(n, d, 'n')])
@@ -294,13 +294,13 @@ def main():
                     tmpDays.append(e)
             for d in tmpDays:
                 if (n, d, 'n') in shifts:
-                    ab = model.NewIntVar(0, nightShiftHoursNotWeekend, "int%s%in" % (n,d))
+                    ab = model.NewIntVar(0, nightShiftHoursNotWeekend, "int%s%ind" % (n,d))
                     model.Add(ab == nightShiftHoursNotWeekend).OnlyEnforceIf(shifts[(n, d, 'n')])
                     model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'n')].Not())
                     worktimes_per_worker[n].append(ab)
                 
-
-            for d in list(all_days):
+            #day shift every day
+            for d in all_days:
                 if (n, d, 'd') in shifts:
                     ab = model.NewIntVar(0, dayShiftHours, "int%s%id" % (n,d))
                     model.Add(ab == dayShiftHours).OnlyEnforceIf(shifts[(n, d, 'd')])
@@ -311,7 +311,7 @@ def main():
             for e in list(all_days):
                 date = datetime.date(now.year, now.month, e)
                 weekday = date.weekday()
-                if weekday == 4 and weekday == 5:
+                if weekday == 4 or weekday == 5:
                     tmpDays.append(e)
             for d in tmpDays:
                 if (n, d, 'wn') in shifts:
@@ -328,6 +328,10 @@ def main():
 
             wtn = model.NewIntVar(minworktime, maxworktime, "worktime_%s" % n)
             model.Add(sum(worktimes_per_worker[n]) == wtn)
+            model.Maximize(wtn)
+    
+    # try to fairly split
+        
 
     # some checks that should avoid wrong calculation
     if max_work < reqMinutes:
@@ -353,9 +357,13 @@ def main():
                             print('  Employee %s works shift %s' % (n, s))
         print('')
         print('Worktime:')
+        all_worktime = 0
         for n in allEmployees:
             minutes = solver.Value(sum(worktimes_per_worker[n]))
+            all_worktime += minutes
             print('  Employee %s works %i minutes' % (n, minutes))
+        print('  needed worktime %i' % (reqMinutes))
+        print('  actual worktime %s' % (all_worktime))
 
         print('')
         print('free weekends:')
