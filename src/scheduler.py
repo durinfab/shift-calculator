@@ -170,32 +170,34 @@ def main():
                 date = datetime.date(now.year, now.month, d)
                 weekday = date.weekday()
                 if weekday == 4:
+
+                    # if friday
                     i = model.NewBoolVar('weekend_%s_%s' % (n, d))
                     freeWeekend = []
                     good = True
                     if (n,d,'wn') in shifts:
                         freeWeekend.append(shifts[(n,d,'wn')])
-                    else:
+                    elif doesShift(n, 'wn'):
                         good = False
 
                     if (n,d+1,'d') in shifts:
                         freeWeekend.append(shifts[(n,d+1,'d')])
-                    else:
+                    elif doesShift(n, 'd'):
                         good = False
 
                     if (n,d+1,'wn') in shifts:
                         freeWeekend.append(shifts[(n,d+1,'wn')])
-                    else:
+                    elif doesShift(n, 'wn'):
                         good = False
 
                     if (n,d+2,'d') in shifts:
                         freeWeekend.append(shifts[(n,d+2,'d')])
-                    else:
+                    elif doesShift(n, 'd'):
                         good = False
 
                     if (n,d+2,'n') in shifts:
                         freeWeekend.append(shifts[(n,d+2,'n')])
-                    else:
+                    elif doesShift(n, 'n'):
                         good = False
                     
                     if good:
@@ -266,6 +268,10 @@ def main():
     max_work = 0
 
     hours_per_week = workerColumns['hours_per_week']
+    overtime_per_employee = workerColumns['overtime']
+
+    deviation = {}
+    diff = {}
 
     if respect_worktime:
         for n in workerColumns['name']:
@@ -324,19 +330,32 @@ def main():
             minworktime = min(min_minutes_per_employee, int(hours_per_week[workerColumns['name'].index(n)])*60)
             maxworktime = (int(hours_per_week[workerColumns['name'].index(n)]) // 7) * len(all_days) * 60
 
+            #add overtime
+            ot = int(overtime_per_employee[workerColumns['name'].index(n)])
+            
+            # work with deviation
+            # https://stackoverflow.com/questions/69498730/google-or-tools-employee-scheduling-minimze-the-deviation-between-how-many-ho
+            maxDev = maxworktime * maxworktime
+            deviation[n] = model.NewIntVar(-1000000, maxDev, "Deviation_for_employee_%s" % (n))
+            diff[n] = model.NewIntVar(-maxDev, maxDev,"Diff_for_employee_%s" % (n))
+            model.Add(diff[n] == sum(worktimes_per_worker[n]) - maxworktime)
+            
+            minusDiff = model.NewIntVar(-maxDev, maxDev,"minusDiff_for_employee_%s" % (n))
+            model.Add(minusDiff == -diff[n])
+            operands = [diff[n], minusDiff]
+            model.AddMaxEquality(deviation[n], operands)
+
             max_work += maxworktime
 
-            wtn = model.NewIntVar(minworktime, maxworktime, "worktime_%s" % n)
-            model.Add(sum(worktimes_per_worker[n]) == wtn)
-            model.Maximize(wtn)
-    
-    # try to fairly split
-        
+    objective = model.NewIntVar(0, len(allEmployees) * maxDev, "Objective")
+    model.AddMaxEquality(objective, deviation.values())
+
+    model.Minimize(objective)
 
     # some checks that should avoid wrong calculation
     if max_work < reqMinutes:
         print('ERROR: The current worker setup cannot fulfill the requirements!')
-        sys.exit()
+        # sys.exit()
 
     # Creates the solver and solve.
     solver = cp_model.CpSolver()
@@ -346,14 +365,11 @@ def main():
         print('Solution:')
         for d in all_days:
             date = datetime.date(now.year, now.month, d)
-            #weekday = date.weekday()
             print('Day %i %s' % (d, calendar.day_name[date.weekday()]))
             for n in allEmployees:
-                is_working = False
                 for s in allShifts:
                     if (n, d, s) in shifts:
                         if solver.Value(shifts[(n, d, s)]) == 1:
-                            is_working = True
                             print('  Employee %s works shift %s' % (n, s))
         print('')
         print('Worktime:')
@@ -362,8 +378,6 @@ def main():
             minutes = solver.Value(sum(worktimes_per_worker[n]))
             all_worktime += minutes
             print('  Employee %s works %i minutes' % (n, minutes))
-        print('  needed worktime %i' % (reqMinutes))
-        print('  actual worktime %s' % (all_worktime))
 
         print('')
         print('free weekends:')
