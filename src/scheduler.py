@@ -380,6 +380,14 @@ def main():
             print('  Employee %s works %i minutes' % (n, minutes))
 
         print('')
+        print('New Overtime:')
+        for n in allEmployees:
+            ot = int(overtime_per_employee[workerColumns['name'].index(n)])
+            minutes = solver.Value(sum(worktimes_per_worker[n]))
+            newOvertime = ((minutes - ((int(hours_per_week[workerColumns['name'].index(n)]) // 7) * len(all_days) * 60)) / 60) + ot
+            print('  Employee %s has now a overtime of %d hours' % (n, newOvertime))
+
+        print('')
         print('free weekends:')
         for n in all_weekends:
             val = solver.Value(n)
