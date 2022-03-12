@@ -16,6 +16,9 @@ vacationFile = "vacation.csv"
 workersFile = "workers.csv"
 configFile = "config.ini"
 
+#max workstime per employee in minutes
+hardCap = 60*60
+
 #enable contraints
 one_empl_per_period = True
 one_shift_per_day = True
@@ -276,6 +279,14 @@ def main():
     if respect_worktime:
         for n in workerColumns['name']:
 
+            # calculate avg worktime per day
+            avg = int(hours_per_week[workerColumns['name'].index(n)]) // 7
+
+            # add all vacations worktime
+            for e in list(all_days):
+                if onVacation(n,e):
+                     worktimes_per_worker[n].append(avg)
+
             #set worktime constraints
             #short night shift not weekend
             tmpDays = [int]
@@ -331,14 +342,14 @@ def main():
             maxworktime = (int(hours_per_week[workerColumns['name'].index(n)]) // 7) * len(all_days) * 60
 
             #add overtime
-            ot = int(overtime_per_employee[workerColumns['name'].index(n)])
+            ot = int(overtime_per_employee[workerColumns['name'].index(n)]) * 60
             
             # work with deviation
             # https://stackoverflow.com/questions/69498730/google-or-tools-employee-scheduling-minimze-the-deviation-between-how-many-ho
-            maxDev = maxworktime * maxworktime
+            maxDev = (maxworktime - ot) * (maxworktime - ot)
             deviation[n] = model.NewIntVar(-1000000, maxDev, "Deviation_for_employee_%s" % (n))
             diff[n] = model.NewIntVar(-maxDev, maxDev,"Diff_for_employee_%s" % (n))
-            model.Add(diff[n] == sum(worktimes_per_worker[n]) - maxworktime)
+            model.Add(diff[n] == sum(worktimes_per_worker[n]) - maxworktime + ot)
             
             minusDiff = model.NewIntVar(-maxDev, maxDev,"minusDiff_for_employee_%s" % (n))
             model.Add(minusDiff == -diff[n])
@@ -347,7 +358,7 @@ def main():
 
             max_work += maxworktime
 
-    objective = model.NewIntVar(0, len(allEmployees) * maxDev, "Objective")
+    objective = model.NewIntVar(0, len(allEmployees) * hardCap, "Objective")
     model.AddMaxEquality(objective, deviation.values())
 
     model.Minimize(objective)

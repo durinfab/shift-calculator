@@ -1,7 +1,7 @@
 name,hours_per_week,overtime,available_for_shift,not_relief
-Paula,40,12,"d,wn",
-James,40,12,"n,d,wn",
-Torsten,40,12,"n,d,wn",
-Thira,40,12,"n,d,wn",
-Frank,40,12,"n,d,wn",
+Paula,20,10,"d,wn",
+James,30,5,"n,d,wn",
+Torsten,60,15,"n,d,wn",
+Thira,40,0,"n,d,wn",
+Frank,40,5,"n,d,wn",
 
