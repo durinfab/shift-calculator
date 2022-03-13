@@ -1,5 +1,11 @@
-.\src\__pycache__
-.vscode
+./src/__pycache__/
+.vscode/
 config.ini
 vacation.csv
 employee.csv
+build/
+dist/
+scheduler.spec
+/build
+/dist
+/vacation.csv

@@ -10,12 +10,6 @@ import shutil
 import holidays
 from collections import defaultdict
 
-project_path = os.getcwd()
-
-vacationFileTemplate = project_path + "\\templates\\vacation_template.csv"
-employeeFileTemplate = project_path + "\\templates\employee_template.csv"
-configFileTemplate = project_path + "\\templates\\config_template.ini"
-
 vacationFile = "vacation.csv"
 employeeFile = "employee.csv"
 configFile = "config.ini"
@@ -37,7 +31,7 @@ assure_free_days = True
 respect_following_employee = True
 
 def main():
-
+    print('Check configs...')
     checkConfigs()
 
     # Creates the model.
@@ -66,7 +60,7 @@ def main():
     with open(configFile) as f:
         config.read_file(f)
 
-
+    print('Parse config...')
     month = int(config["General"]["month"])
     year = int(config["General"]["year"])
     country_cc = config["General"]["country_cc"]
@@ -97,14 +91,13 @@ def main():
     
     worktimes_per_worker = {}
 
+    print('Apply possible shifts...')
     #add all possible results
     #search domain
     for d in all_days:
         date = datetime.date(year, month, d)
         weekday = date.weekday()
         for n in workerColumns['name']:
-
-            workerIndex = workerColumns['name'].index(n)
             worktimes_per_worker[n] = []
 
             # if employee is not on vacation
@@ -121,6 +114,8 @@ def main():
                             
     #all reqired minutes
     reqMinutes = 0
+
+    print('Apply constraints...')
 
     # Each shift is assigned to exactly one employee in the schedule period.
     if one_empl_per_period:
@@ -392,6 +387,7 @@ def main():
 
     # Creates the solver and solve.
     solver = cp_model.CpSolver()
+    print('Start solving...')
     status = solver.Solve(model)
 
     if status == cp_model.OPTIMAL:
@@ -442,14 +438,24 @@ def main():
     print('  - wall time      : %f s' % solver.WallTime())
     print('')
     print("Shift calculator by Fabian During")
+    print('')
+    print("Press enter to close")
+    input()
 
 def checkConfigs():
     createdConfigs = False
     try:
         f = open(employeeFile)
     except IOError:
-        #if no employee config: generate one
-        shutil.copyfile(employeeFileTemplate, employeeFile)
+        with open(employeeFile, 'w', encoding='UTF8') as f:
+            writer = csv.writer(f)
+            writer.writerow(["name","hours_per_week","overtime","available_for_shift","not_relief"])
+            writer.writerow(["Paula",20,10,"d,wn",])
+            writer.writerow(["James",30,5,"n,d,wn",])
+            writer.writerow(["Torsten",60,15,"n,d,wn",])
+            writer.writerow(["Thira",40,0,"n,d,wn",])
+            writer.writerow(["Frank",40,5,"n,d,wn",])
+
         createdConfigs = True
 
     # if no global config: generate on
@@ -459,14 +465,44 @@ def checkConfigs():
         with open(configFile) as f:
             config.read_file(f)
     except IOError:
-        shutil.copyfile(configFileTemplate, configFile)
+        config = configparser.RawConfigParser()
+        config.add_section('General')
+        config.add_section('Constraints')
+        config.add_section('Shift_worktimes')
+        config.set('General', 'month', '3')
+        config.set('General', 'year', '2022')
+        config.set('General', 'country_cc', 'DE')
+        config.set('General', 'subdivision', 'BB')
+
+        config.set('Constraints', 'one_empl_per_period', 'True')
+        config.set('Constraints', 'one_shift_per_day', 'True')
+        config.set('Constraints', 'free_weekend', 'True')
+        config.set('Constraints', 'not_two_consec_nights', 'True')
+        config.set('Constraints', 'respect_worktime', 'True')
+        config.set('Constraints', 'assure_free_days', 'True')
+        config.set('Constraints', 'respect_following_employee', 'True')
+
+        config.set('Shift_worktimes', 'dayShiftHours', '360')
+        config.set('Shift_worktimes', 'nightShiftHoursWeekend', '1050')
+        config.set('Shift_worktimes', 'nightShiftHoursNotWeekend', '1095')
+        config.set('Shift_worktimes', 'nightShiftHoursNotWeekendHWK', '855')
+
+        with open(configFile, 'w') as configfile:
+            config.write(configfile)
         createdConfigs = True
 
     try:
         f = open(vacationFile)
     except IOError:
-        #if no month config: generate one
-        shutil.copyfile(vacationFileTemplate, vacationFile)
+        with open(vacationFile, 'w', encoding='UTF8') as f:
+            writer = csv.writer(f)
+            writer.writerow(["employee",1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31])
+            writer.writerow(["Paula","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
+            writer.writerow(["Torsten","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
+            writer.writerow(["James","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
+            writer.writerow(["Thira","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
+            writer.writerow(["Frank","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
+
         createdConfigs = True
 
     if createdConfigs:
@@ -487,8 +523,10 @@ def doesShift(name, shift):
 def shouldNotRelief(empl, next):
     i = workerColumns['name'].index(empl)
     relief = workerColumns['not_relief'][i]
-    avshifts = relief.split(',')
-    return next in avshifts
+    if relief:
+        avshifts = relief.split(',')
+        return next in avshifts
+    return False
 
 if __name__ == '__main__':
     main()
