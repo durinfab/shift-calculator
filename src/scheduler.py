@@ -1,13 +1,16 @@
 """Example of a simple nurse scheduling problem."""
+import subprocess
 import sys
 from ortools.sat.python import cp_model
 import csv
 import configparser
+import numpy as np
+import pandas as pd
 import calendar
 import datetime
-import os
-import shutil
 import holidays
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 from collections import defaultdict
 
 vacationFile = "vacation.csv"
@@ -15,7 +18,7 @@ employeeFile = "employee.csv"
 configFile = "config.ini"
 
 #max workstime per employee in minutes
-hardCap = 60*60
+hardCap = 80*80
 
 month = ""
 year = ""
@@ -357,13 +360,14 @@ def main():
             #min worktime
             minworktime = min(min_minutes_per_employee, int(hours_per_week[workerColumns['name'].index(n)])*60)
             maxworktime = (int(hours_per_week[workerColumns['name'].index(n)]) // 7) * len(all_days) * 60
+            print("%s should work %i minutes per month" % (n, maxworktime))
 
             #add overtime
             ot = int(overtime_per_employee[workerColumns['name'].index(n)]) * 60
             
             # work with deviation
             # https://stackoverflow.com/questions/69498730/google-or-tools-employee-scheduling-minimze-the-deviation-between-how-many-ho
-            maxDev = (maxworktime - ot) * (maxworktime - ot)
+            maxDev = (maxworktime) * (maxworktime)
             deviation[n] = model.NewIntVar(-1000000, maxDev, "Deviation_for_employee_%s" % (n))
             diff[n] = model.NewIntVar(-maxDev, maxDev,"Diff_for_employee_%s" % (n))
             model.Add(diff[n] == sum(worktimes_per_worker[n]) - maxworktime + ot)
@@ -391,6 +395,16 @@ def main():
     status = solver.Solve(model)
 
     if status == cp_model.OPTIMAL:
+
+        # create panda dataframe
+        d = pd.to_datetime(f'{calendar.month_name[month]} {year}', format='%B %Y')
+        dates = pd.date_range(start = d, periods = d.daysinmonth)
+        df = pd.DataFrame(index=dates, columns=allEmployees)
+
+        ind = ["overtime", "actual worktime"]
+        odf = pd.DataFrame(index=ind, columns=allEmployees)
+
+
         print('Solution:')
         for d in all_days:
             date = datetime.date(year, month, d)
@@ -400,13 +414,39 @@ def main():
                     if (n, d, s) in shifts:
                         if solver.Value(shifts[(n, d, s)]) == 1:
                             print('  Employee %s works shift %s' % (n, s))
+
+                            date = datetime.date(year, month, d)
+                            wd = date.weekday()
+                            currentDay = date.strftime("%Y-%m-%d")
+
+                            last_day = True
+                            if d+1 < len(list(all_days)):
+                                date = datetime.date(year, month, d+1)
+                                nextDay = date.strftime("%Y-%m-%d")
+                                last_day = False
+
+                            if s == "d":
+                                df.xs(currentDay)[n] = "14:00-20:00"
+                            elif s == "n" and wd == 0:
+                                df.xs(currentDay)[n] = "13:00-22:00"
+                                if last_day:
+                                    df.xs(nextDay)[n] = "05:00-13:30"
+                            elif s == "wn" and (wd == 4 or wd == 5):
+                                df.xs(currentDay)[n] = "13:00-22:00"
+                                if last_day:
+                                    df.xs(nextDay)[n] = "06:00-13:30"
+                            else:
+                                df.xs(currentDay)[n] = "13:00-22:00"
+                                if last_day:
+                                    df.xs(nextDay)[n] = "05:00-09:30"
         print('')
         print('Worktime:')
         all_worktime = 0
         for n in allEmployees:
             minutes = solver.Value(sum(worktimes_per_worker[n]))
             all_worktime += minutes
-            print('  Employee %s works %i minutes' % (n, minutes))
+            odf.xs("actual worktime")[n] = "%i hours" % (minutes // 60)
+            print('  Employee %s works %i from minutes' % (n, minutes))
 
         print('')
         print('New Overtime:')
@@ -414,6 +454,7 @@ def main():
             ot = int(overtime_per_employee[workerColumns['name'].index(n)])
             minutes = solver.Value(sum(worktimes_per_worker[n]))
             newOvertime = ((minutes - ((int(hours_per_week[workerColumns['name'].index(n)]) // 7) * len(all_days) * 60)) / 60) + ot
+            odf.xs("overtime")[n] = newOvertime
             print('  Employee %s has now a overtime of %d hours' % (n, newOvertime))
 
         print('')
@@ -421,15 +462,40 @@ def main():
         for n in all_weekends:
             val = solver.Value(n)
             if val == 1:
-                print('weekend free %s' % (n))
+                print('  weekend free %s' % (n))
         print('')
         print('free days:')
+        i = 0
         for n in range(len(all_emp_free_days)):
             a = solver.Value(all_emp_free_days[n])
             if a == True:
-                print(all_emp_free_days[n])
+                i += 1
+                print("  %s" % all_emp_free_days[n])
     else:
         print('No optimal solution found !')
+
+    df = df.fillna('')
+
+    filestr = "shifts-%i-%i.pdf" % (month, year)
+
+    pp = PdfPages(filestr)
+    
+    fig, ax =plt.subplots(figsize=(12,4))
+    ax.axis('tight')
+    ax.axis('off')
+    the_table = ax.table(rowLabels=dates.strftime('%Y-%m-%d %A'), cellText=df.values,colLabels=df.columns,loc='center')
+    pp.savefig(fig, bbox_inches='tight')
+    plt.close()
+
+    fig1, ax1 =plt.subplots(figsize=(12,4))
+    ax1.axis('tight')
+    ax1.axis('off')
+    the_table1 = ax1.table(rowLabels=ind, cellText=odf.values,colLabels=odf.columns,loc='center')
+    pp.savefig(fig1, bbox_inches='tight')
+    plt.close()
+    pp.close()
+    subprocess.Popen([filestr],shell=True)
+
 
     # Statistics.
     print('\nStatistics')
@@ -449,8 +515,8 @@ def checkConfigs():
     except IOError:
         with open(employeeFile, 'w', encoding='UTF8') as f:
             writer = csv.writer(f)
-            writer.writerow(["name","hours_per_week","overtime","available_for_shift","not_relief"])
-            writer.writerow(["Paula",20,10,"d,wn",])
+            writer.writerow(["name","hours_per_week","overtime","available_for_shift","not_replaced_by"])
+            writer.writerow(["Paula",20,10,"d,wn","James"])
             writer.writerow(["James",30,5,"n,d,wn",])
             writer.writerow(["Torsten",60,15,"n,d,wn",])
             writer.writerow(["Thira",40,0,"n,d,wn",])
@@ -506,8 +572,12 @@ def checkConfigs():
         createdConfigs = True
 
     if createdConfigs:
-        print("template files created")
-        print("consider to change them")
+        print("Template files created...")
+        print("Consider to change them!")
+        print("Shift calculator by Fabian During")
+        print('')
+        print("Press enter to close")
+        input()
         sys.exit()
 
 def onVacation(name, day):
@@ -522,7 +592,7 @@ def doesShift(name, shift):
 
 def shouldNotRelief(empl, next):
     i = workerColumns['name'].index(empl)
-    relief = workerColumns['not_relief'][i]
+    relief = workerColumns['not_replaced_by'][i]
     if relief:
         avshifts = relief.split(',')
         return next in avshifts
