@@ -6,20 +6,28 @@ import configparser
 import calendar
 import datetime
 import os
+import shutil
 import holidays
 from collections import defaultdict
 
-header = ['name', 'hours_per_week', 'overtime', 'available_for_shift', 'not relief']
-w1 = ['Paula', '40', '12', 'd,n,wn', '']
-w2 = ['Renate', '35', '-5', 'd,n', 'Paula']
+project_path = os.getcwd()
+
+vacationFileTemplate = project_path + "\\templates\\vacation_template.csv"
+employeeFileTemplate = project_path + "\\templates\employee_template.csv"
+configFileTemplate = project_path + "\\templates\\config_template.ini"
+
 vacationFile = "vacation.csv"
-workersFile = "workers.csv"
+employeeFile = "employee.csv"
 configFile = "config.ini"
 
 #max workstime per employee in minutes
 hardCap = 60*60
 
-#enable contraints
+month = ""
+year = ""
+subdivision = ""
+
+#contraints
 one_empl_per_period = True
 one_shift_per_day = True
 free_weekend = True
@@ -30,16 +38,12 @@ respect_following_employee = True
 
 def main():
 
-    print("Welcome to the shift calculator!")
-
-    #deleteGeneratedFiles()
-
     checkConfigs()
 
     # Creates the model.
     model = cp_model.CpModel()
 
-    employee_file = open(workersFile, newline='')
+    employee_file = open(employeeFile, newline='')
     workerReader = csv.DictReader(employee_file)
     global workerColumns
     workerColumns = defaultdict(list)
@@ -57,20 +61,38 @@ def main():
         for (k,v) in row.items():
             vacationColumns[k].append(v)
 
+    config = configparser.ConfigParser()
+    config.sections()
+    with open(configFile) as f:
+        config.read_file(f)
+
+
+    month = int(config["General"]["month"])
+    year = int(config["General"]["year"])
+    country_cc = config["General"]["country_cc"]
+    subdivision = config["General"]["subdivision"]
+    
+    one_empl_per_period = config["Constraints"]["one_empl_per_period"]
+    one_shift_per_day = config["Constraints"]["one_shift_per_day"]
+    free_weekend = config["Constraints"]["free_weekend"]
+    not_two_consec_nights = config["Constraints"]["not_two_consec_nights"]
+    respect_worktime = config["Constraints"]["respect_worktime"]
+    assure_free_days = config["Constraints"]["assure_free_days"]
+    respect_following_employee = config["Constraints"]["respect_following_employee"]
+
     # Creates shift variables.
     # shifts[(n, d, s)]: nurse 'n' works shift 's' on day 'd'.
-    now = datetime.datetime.now()
 
     shifts = {}
     normalShifts = ["n","d"]
     weekendShifts = ["d","wn"]
     allShifts = ["d", "n","wn"]
     allEmployees = workerColumns['name']
-    all_days = range(1, calendar.monthrange(now.year, now.month)[1]+1)
-    dayShiftHours = 360
-    nightShiftHoursWeekend = 1050 #17,5
-    nightShiftHoursNotWeekend = 1095 #18,25
-    nightShiftHoursNotWeekendHWK = 855 #14,25
+    all_days = range(1, calendar.monthrange(year, month)[1]+1)
+    dayShiftHours = int(config["Shift_worktimes"]["dayShiftHours"])
+    nightShiftHoursWeekend = int(config["Shift_worktimes"]["nightShiftHoursWeekend"])
+    nightShiftHoursNotWeekend = int(config["Shift_worktimes"]["nightShiftHoursNotWeekend"])
+    nightShiftHoursNotWeekendHWK = int(config["Shift_worktimes"]["nightShiftHoursNotWeekendHWK"])
 
     
     worktimes_per_worker = {}
@@ -78,7 +100,7 @@ def main():
     #add all possible results
     #search domain
     for d in all_days:
-        date = datetime.date(now.year, now.month, d)
+        date = datetime.date(year, month, d)
         weekday = date.weekday()
         for n in workerColumns['name']:
 
@@ -103,7 +125,7 @@ def main():
     # Each shift is assigned to exactly one employee in the schedule period.
     if one_empl_per_period:
         for d in all_days:
-            date = datetime.date(now.year, now.month, d)
+            date = datetime.date(year, month, d)
             weekday = date.weekday()
 
             freeEmps = []
@@ -170,12 +192,12 @@ def main():
         for n in allEmployees:
             collectedWeekends = []
             for d in all_days:
-                date = datetime.date(now.year, now.month, d)
+                date = datetime.date(year, month, d)
                 weekday = date.weekday()
                 if weekday == 4:
 
                     # if friday
-                    i = model.NewBoolVar('weekend_%s_%s' % (n, d))
+                    i = model.NewBoolVar('%s has free weekend starting at %s' % (n, d))
                     freeWeekend = []
                     good = True
                     if (n,d,'wn') in shifts:
@@ -211,11 +233,11 @@ def main():
 
     free_days_count = 0
     if assure_free_days:
-        de_bb_holidays = holidays.country_holidays('DE', subdiv='BB')
+        all_holidays = holidays.country_holidays(country_cc, subdiv=subdivision)
         for d in all_days:
-            date = datetime.date(now.year, now.month, d)
+            date = datetime.date(year, month, d)
             #check holiday
-            if date in de_bb_holidays:
+            if date in all_holidays:
                 free_days_count = free_days_count + 1
             #check weekend
             elif date.weekday() == 5 or date.weekday() == 6:
@@ -227,13 +249,13 @@ def main():
             for d in all_days:
                 # count free days of employee
                 if (n,d,'d') in shifts and (n,d,'n') in shifts:
-                    i = model.NewBoolVar('freeday_%s_%s' % (n, d))
+                    i = model.NewBoolVar('%s has day off on %s' % (n, d))
                     model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'n')]]) == 0).OnlyEnforceIf(i)  
                     collected_free_days.append(i)
                     all_emp_free_days.append(i)
 
                 if (n,d,'d') in shifts and (n,d,'wn') in shifts:
-                    i = model.NewBoolVar('freeday_%s_%s' % (n, d))
+                    i = model.NewBoolVar('%s has day off on %s' % (n, d))
                     model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'wn')]]) == 0).OnlyEnforceIf(i)  
                     collected_free_days.append(i)
                     all_emp_free_days.append(i)
@@ -291,7 +313,7 @@ def main():
             #short night shift not weekend
             tmpDays = [int]
             for e in list(all_days):
-                date = datetime.date(now.year, now.month, e)
+                date = datetime.date(year, month, e)
                 weekday = date.weekday()
                 if weekday == 1 or weekday == 2 or weekday == 3:
                     tmpDays.append(e)
@@ -305,7 +327,7 @@ def main():
             #long night shift not weekend
             tmpDays = [int]
             for e in list(all_days):
-                date = datetime.date(now.year, now.month, e)
+                date = datetime.date(year, month, e)
                 weekday = date.weekday()
                 if weekday == 0 or weekday == 6:
                     tmpDays.append(e)
@@ -326,7 +348,7 @@ def main():
 
             tmpDays = [int]
             for e in list(all_days):
-                date = datetime.date(now.year, now.month, e)
+                date = datetime.date(year, month, e)
                 weekday = date.weekday()
                 if weekday == 4 or weekday == 5:
                     tmpDays.append(e)
@@ -365,7 +387,7 @@ def main():
 
     # some checks that should avoid wrong calculation
     if max_work < reqMinutes:
-        print('ERROR: The current worker setup cannot fulfill the requirements!')
+        print('Warning: The current employee setup cannot fulfill the worktime requirements. They will work overtime.')
         # sys.exit()
 
     # Creates the solver and solve.
@@ -375,7 +397,7 @@ def main():
     if status == cp_model.OPTIMAL:
         print('Solution:')
         for d in all_days:
-            date = datetime.date(now.year, now.month, d)
+            date = datetime.date(year, month, d)
             print('Day %i %s' % (d, calendar.day_name[date.weekday()]))
             for n in allEmployees:
                 for s in allShifts:
@@ -418,32 +440,17 @@ def main():
     print('  - conflicts      : %i' % solver.NumConflicts())
     print('  - branches       : %i' % solver.NumBranches())
     print('  - wall time      : %f s' % solver.WallTime())
-
-def deleteGeneratedFiles():
-    if os.path.exists(vacationFile):
-        os.remove(vacationFile)
-    if os.path.exists(workersFile):
-        os.remove(workersFile)
-    if os.path.exists(configFile):
-        os.remove(configFile)
+    print('')
+    print("Shift calculator by Fabian During")
 
 def checkConfigs():
     createdConfigs = False
     try:
-        f = open(workersFile)
+        f = open(employeeFile)
     except IOError:
-        #if no workers config: generate one
-        with open(workersFile, newline='', mode='w') as employee_file:
-            writer = csv.writer(employee_file)
-
-            #generate example data
-            writer.writerow(header)
-            writer.writerow(w1)
-            writer.writerow(w2)
-
-            print("created %s" % workersFile)
-
-            createdConfigs = True
+        #if no employee config: generate one
+        shutil.copyfile(employeeFileTemplate, employeeFile)
+        createdConfigs = True
 
     # if no global config: generate on
     try:
@@ -452,53 +459,23 @@ def checkConfigs():
         with open(configFile) as f:
             config.read_file(f)
     except IOError:
-        config = configparser.ConfigParser()
-        config.sections()
-        with open(configFile, mode='w') as config_file:
-            config.add_section('General')
-            config.set('General','NotTwoWorkshifts',"True")
-            config.set('General','EveryWorkerFreeWeekend', "True")
-            config.set('General','WorkerFreeDaysEqualWeekendDaysPlusPublicHolidays', "True")
-            config.set('General','BalanceOvertime', "True")
-            config.write(config_file)
-            config_file.close()
-
-        print("created %s" % configFile)
-
+        shutil.copyfile(configFileTemplate, configFile)
         createdConfigs = True
 
     try:
         f = open(vacationFile)
     except IOError:
         #if no month config: generate one
-        with open(vacationFile, newline='', mode='w') as month_file:
-            writer = csv.writer(month_file)
-
-            now = datetime.datetime.now()
-            list1 = ["workers"]
-            list1.extend(range(1, calendar.monthrange(now.year, now.month)[1]+1))
-            writer.writerow(list1)
-
-            #add workers
-            with open(workersFile, newline='') as employee_file:
-                reader = csv.DictReader(employee_file)
-                columns = defaultdict(list)
-
-                for row in reader:
-                    for (k,v) in row.items():
-                        columns[k].append(v)
-                for workers in columns['name']:
-                    writer.writerow([workers])
-
-            print("created %s" % vacationFile)
-
-            createdConfigs = True
+        shutil.copyfile(vacationFileTemplate, vacationFile)
+        createdConfigs = True
 
     if createdConfigs:
+        print("template files created")
+        print("consider to change them")
         sys.exit()
 
 def onVacation(name, day):
-    i = vacationColumns['workers'].index(name)
+    i = vacationColumns['employee'].index(name)
     return  vacationColumns[str(day)][i] == "yes"
 
 def doesShift(name, shift):

@@ -1,1 +1,5 @@
 .\src\__pycache__
+.vscode
+config.ini
+vacation.csv
+employee.csv
