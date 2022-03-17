@@ -246,15 +246,29 @@ def main():
             collected_free_days = []
             for d in all_days:
                 # count free days of employee
+                t = False
+                if d-1 > 0:
+                    t = (n,d-1,'n') in shifts or (n,d-1,'wn') in shifts
                 if (n,d,'d') in shifts and (n,d,'n') in shifts:
                     i = model.NewBoolVar('%s has day off on %s' % (n, d))
-                    model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'n')]]) == 0).OnlyEnforceIf(i)  
+                    if t:
+                        if (n,d-1,'n') in shifts:
+                            model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'n')], shifts[(n,d-1,'n')]]) == 0).OnlyEnforceIf(i)
+                        else:
+                            model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'n')], shifts[(n,d-1,'wn')]]) == 0).OnlyEnforceIf(i)
+                    else:
+                        model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'n')]]) == 0).OnlyEnforceIf(i)
                     collected_free_days.append(i)
                     all_emp_free_days.append(i)
-
                 if (n,d,'d') in shifts and (n,d,'wn') in shifts:
                     i = model.NewBoolVar('%s has day off on %s' % (n, d))
-                    model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'wn')]]) == 0).OnlyEnforceIf(i)  
+                    if t:
+                        if (n,d-1,'n') in shifts:
+                            model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'wn')], shifts[(n,d-1,'n')]]) == 0).OnlyEnforceIf(i)
+                        else:
+                            model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'wn')], shifts[(n,d-1,'wn')]]) == 0).OnlyEnforceIf(i)
+                    else:
+                        model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'wn')]]) == 0).OnlyEnforceIf(i)  
                     collected_free_days.append(i)
                     all_emp_free_days.append(i)
             model.Add(sum(collected_free_days) >= free_days_count)
