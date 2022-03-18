@@ -32,6 +32,7 @@ not_two_consec_nights = True
 respect_worktime = True
 assure_free_days = True
 respect_following_employee = True
+no_d_on_hwk = True
 
 def main():
     print('Check configs...')
@@ -81,9 +82,10 @@ def main():
     # shifts[(n, d, s)]: nurse 'n' works shift 's' on day 'd'.
 
     shifts = {}
-    normalShifts = ["n","d"]
+    noHwkShifts = ["n","d"]
+    HwkShifts = ["d","nhwk"]
     weekendShifts = ["d","wn"]
-    allShifts = ["d", "n","wn"]
+    allShifts = ["d", "n","wn", "nhwk"]
     allEmployees = workerColumns['name']
     all_days = range(1, calendar.monthrange(year, month)[1]+1)
     dayShiftHours = int(config["Shift_worktimes"]["dayShiftHours"])
@@ -105,11 +107,14 @@ def main():
 
             # if employee is not on vacation
             if not onVacation(n,d):
-                if weekday != 4 and weekday != 5:
-                    for s in normalShifts:
+                if weekday == 6 or weekday == 0:
+                    for s in noHwkShifts:
                         if doesShift(n,s):
                             shifts[(n, d, s)] = model.NewBoolVar('shift_%s_%s_%s' % (n, d, s))
-
+                elif weekday == 1 or weekday == 2 or weekday == 3:
+                    for s in HwkShifts:
+                        if doesShift(n,s):
+                            shifts[(n, d, s)] = model.NewBoolVar('shift_%s_%s_%s' % (n, d, s))
                 else:
                     for s in weekendShifts:
                         if doesShift(n,s):
@@ -137,18 +142,15 @@ def main():
             model.Add(sum(can) == 1)
             reqMinutes += dayShiftHours
             
-            if weekday != 4 and weekday != 5:
+            if weekday == 1 or weekday == 2 or weekday == 3:
                 # day and normal night shift
                 freeEmps = []
                 for n in workerColumns['name']:
-                    if not onVacation(n,d) and doesShift(n,allShifts[1]):
+                    if not onVacation(n,d) and doesShift(n,allShifts[3]):
                         freeEmps.append(n)
-                model.Add(sum(shifts[(a, d, allShifts[1])] for a in freeEmps) == 1)
-                if weekday == 1 or weekday == 2 or weekday == 3:
-                    reqMinutes += nightShiftHoursNotWeekendHWK
-                else:
-                    reqMinutes += nightShiftHoursNotWeekend
-            else:
+                model.Add(sum(shifts[(a, d, allShifts[3])] for a in freeEmps) == 1)
+                reqMinutes += nightShiftHoursNotWeekendHWK
+            elif weekday == 4 or weekday == 5:
                 # day and weekend night shift
                 freeEmps = []
                 for n in workerColumns['name']:
@@ -156,6 +158,14 @@ def main():
                         freeEmps.append(n)
                 model.Add(sum(shifts[(a, d, allShifts[2])] for a in freeEmps) == 1)
                 reqMinutes += nightShiftHoursWeekend
+            else:
+                # day and normal night shift
+                freeEmps = []
+                for n in workerColumns['name']:
+                    if not onVacation(n,d) and doesShift(n,allShifts[1]):
+                        freeEmps.append(n)
+                model.Add(sum(shifts[(a, d, allShifts[1])] for a in freeEmps) == 1)
+                reqMinutes += nightShiftHoursNotWeekend
 
     if respect_following_employee:
         for n in allEmployees:
@@ -165,11 +175,17 @@ def main():
                         if (n,d,'d') in shifts and (m,d,'n') in shifts:
                             model.Add(shifts[(m,d,'n')] == 0).OnlyEnforceIf(shifts[(n,d,'d')])
 
+                        if (n,d,'d') in shifts and (m,d,'nhwk') in shifts:
+                            model.Add(shifts[(m,d,'nhwk')] == 0).OnlyEnforceIf(shifts[(n,d,'d')])
+
                         if (n,d,'d') in shifts and (m,d,'wn') in shifts:
                             model.Add(shifts[(m,d,'wn')] == 0).OnlyEnforceIf(shifts[(n,d,'d')])
 
                         if (n,d,'wn') in shifts and (m,d+1,'d') in shifts:
                             model.Add(shifts[(m,d+1,'d')] == 0).OnlyEnforceIf(shifts[(n,d,'wn')])
+
+                        if (n,d,'nhwk') in shifts and (m,d+1,'d') in shifts:
+                            model.Add(shifts[(m,d+1,'d')] == 0).OnlyEnforceIf(shifts[(n,d,'nhwk')])
 
                         if (n,d,'n') in shifts and (m,d+1,'d') in shifts:
                             model.Add(shifts[(m,d+1,'d')] == 0).OnlyEnforceIf(shifts[(n,d,'n')])
@@ -248,12 +264,14 @@ def main():
                 # count free days of employee
                 t = False
                 if d-1 > 0:
-                    t = (n,d-1,'n') in shifts or (n,d-1,'wn') in shifts
+                    t = (n,d-1,'n') in shifts or (n,d-1,'wn') in shifts or (n,d-1,'nhwk') in shifts
                 if (n,d,'d') in shifts and (n,d,'n') in shifts:
                     i = model.NewBoolVar('%s has day off on %s' % (n, d))
                     if t:
                         if (n,d-1,'n') in shifts:
                             model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'n')], shifts[(n,d-1,'n')]]) == 0).OnlyEnforceIf(i)
+                        elif (n,d-1,'nhwk') in shifts:
+                            model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'n')], shifts[(n,d-1,'nhwk')]]) == 0).OnlyEnforceIf(i)
                         else:
                             model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'n')], shifts[(n,d-1,'wn')]]) == 0).OnlyEnforceIf(i)
                     else:
@@ -265,14 +283,36 @@ def main():
                     if t:
                         if (n,d-1,'n') in shifts:
                             model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'wn')], shifts[(n,d-1,'n')]]) == 0).OnlyEnforceIf(i)
+                        elif (n,d-1,'nhwk') in shifts:
+                            model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'wn')], shifts[(n,d-1,'nhwk')]]) == 0).OnlyEnforceIf(i)
                         else:
                             model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'wn')], shifts[(n,d-1,'wn')]]) == 0).OnlyEnforceIf(i)
                     else:
                         model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'wn')]]) == 0).OnlyEnforceIf(i)  
                     collected_free_days.append(i)
                     all_emp_free_days.append(i)
+
+                if (n,d,'d') in shifts and (n,d,'nhwk') in shifts:
+                    i = model.NewBoolVar('%s has day off on %s' % (n, d))
+                    if t:
+                        if (n,d-1,'n') in shifts:
+                            model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'nhwk')], shifts[(n,d-1,'n')]]) == 0).OnlyEnforceIf(i)
+                        elif (n,d-1,'nhwk') in shifts:
+                            model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'nhwk')], shifts[(n,d-1,'nhwk')]]) == 0).OnlyEnforceIf(i)
+                        else:
+                            model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'nhwk')], shifts[(n,d-1,'wn')]]) == 0).OnlyEnforceIf(i)
+                    else:
+                        model.Add(sum([shifts[(n,d,'d')], shifts[(n,d,'nhwk')]]) == 0).OnlyEnforceIf(i)  
+                    collected_free_days.append(i)
+                    all_emp_free_days.append(i)
             model.Add(sum(collected_free_days) >= free_days_count)
 
+    if no_d_on_hwk:
+         for n in allEmployees:
+            for d in all_days:
+                if d-1 > 1:
+                    if (n,d-1,'nhwk') in shifts and (n,d,'d') in shifts:
+                        model.Add(sum([shifts[(n,d,'d')], shifts[(n,d-1,'nhwk')]]) <= 1)
 
     if not_two_consec_nights:
         #not two consecutive nights
@@ -283,11 +323,19 @@ def main():
                 if (n,d,'n') in shifts:
                     if (n,d+1,'n') in shifts:
                         model.Add(sum([shifts[(n,d,'n')], shifts[(n,d+1,'n')]]) <= 1)
+
+                if (n,d,'n') in shifts:
+                    if (n,d+1,'nhwk') in shifts:
+                        model.Add(sum([shifts[(n,d,'n')], shifts[(n,d+1,'nhwk')]]) <= 1)
                         
                 if (n,d,'n') in shifts:
                     if (n,d+1,'wn') in shifts:
                         model.Add(sum([shifts[(n,d,'n')], shifts[(n,d+1,'wn')]]) <= 1)
                         
+                if (n,d,'wn') in shifts:
+                    if (n,d+1,'nhwk') in shifts:
+                        model.Add(sum([shifts[(n,d,'wn')], shifts[(n,d+1,'nhwk')]]) <= 1)
+
                 if (n,d,'wn') in shifts:
                     if (n,d+1,'n') in shifts:
                         model.Add(sum([shifts[(n,d,'wn')], shifts[(n,d+1,'n')]]) <= 1)
@@ -295,6 +343,18 @@ def main():
                 if (n,d,'wn') in shifts:
                     if (n,d+1,'wn') in shifts:
                         model.Add(sum([shifts[(n,d,'wn')], shifts[(n,d+1,'wn')]]) <= 1)
+
+                if (n,d,'nhwk') in shifts:
+                    if (n,d+1,'nhwk') in shifts:
+                        model.Add(sum([shifts[(n,d,'nhwk')], shifts[(n,d+1,'nhwk')]]) <= 1)
+
+                if (n,d,'nhwk') in shifts:
+                    if (n,d+1,'n') in shifts:
+                        model.Add(sum([shifts[(n,d,'nhwk')], shifts[(n,d+1,'n')]]) <= 1)
+                        
+                if (n,d,'nhwk') in shifts:
+                    if (n,d+1,'wn') in shifts:
+                        model.Add(sum([shifts[(n,d,'nhwk')], shifts[(n,d+1,'wn')]]) <= 1)
                     
 
 
@@ -330,10 +390,10 @@ def main():
                 if weekday == 1 or weekday == 2 or weekday == 3:
                     tmpDays.append(e)
             for d in tmpDays:
-                if (n, d, 'n') in shifts:
+                if (n, d, 'nhwk') in shifts:
                     ab = model.NewIntVar(0, nightShiftHoursNotWeekendHWK, "int%s%in" % (n,d))
-                    model.Add(ab == nightShiftHoursNotWeekendHWK).OnlyEnforceIf(shifts[(n, d, 'n')])
-                    model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'n')].Not())
+                    model.Add(ab == nightShiftHoursNotWeekendHWK).OnlyEnforceIf(shifts[(n, d, 'nhwk')])
+                    model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'nhwk')].Not())
                     worktimes_per_worker[n].append(ab)
 
             #long night shift not weekend
@@ -425,34 +485,77 @@ def main():
             print('Day %i %s' % (d, calendar.day_name[date.weekday()]))
             for n in allEmployees:
                 for s in allShifts:
-                    if (n, d, s) in shifts:
+                    date = datetime.date(year, month, d)
+                    wd = date.weekday()
+                    currentDay = date.strftime("%Y-%m-%d")
+
+                    pre_day = False
+                    if d-1 > 1:
+                        pre_day = True
+                    if (n, d, s) in shifts: 
                         if solver.Value(shifts[(n, d, s)]) == 1:
                             print('  Employee %s works shift %s' % (n, s))
 
-                            date = datetime.date(year, month, d)
-                            wd = date.weekday()
-                            currentDay = date.strftime("%Y-%m-%d")
+                            if n == "Paula":
+                                print()
 
                             last_day = True
                             if d+1 < len(list(all_days)):
                                 date = datetime.date(year, month, d+1)
                                 nextDay = date.strftime("%Y-%m-%d")
                                 last_day = False
+                            
 
                             if s == "d":
-                                df.xs(currentDay)[n] = "14:00-20:00"
-                            elif s == "n" and wd == 0:
+                                if pre_day:
+                                    if (n, d-1, "n") in shifts and solver.Value(shifts[(n, d-1, "n")]):
+                                        df.xs(currentDay)[n] = "05:00-20:00"
+                                    else:
+                                        df.xs(currentDay)[n] = "14:00-20:00"
+
+                                    if (n, d-1, "nhwk") in shifts and solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
+                                        df.xs(currentDay)[n] = "05:00-09:30 / 14:00-20:00"
+                                    else:
+                                        df.xs(currentDay)[n] = "14:00-20:00"
+
+                                    if (n, d-1, "wn") in shifts and solver.Value(shifts[(n, d-1, "wn")]) == 1:
+                                        df.xs(currentDay)[n] = "06:00-20:00"
+                                    else:
+                                        df.xs(currentDay)[n] = "14:00-20:00"
+                                else:
+                                    df.xs(currentDay)[n] = "14:00-20:00"
+                            elif s == "n":
                                 df.xs(currentDay)[n] = "13:00-22:00"
-                                if last_day:
-                                    df.xs(nextDay)[n] = "05:00-13:30"
-                            elif s == "wn" and (wd == 4 or wd == 5):
+                            elif s == "wn":
                                 df.xs(currentDay)[n] = "13:00-22:00"
-                                if last_day:
-                                    df.xs(nextDay)[n] = "06:00-13:30"
-                            else:
+                            elif s == "nhwk":
                                 df.xs(currentDay)[n] = "13:00-22:00"
-                                if last_day:
-                                    df.xs(nextDay)[n] = "05:00-09:30"
+                            
+                        #today no new shift
+                        elif pre_day:
+                            if (n, d-1, "n") in shifts:
+                                if solver.Value(shifts[(n, d-1, "n")]) == 1:
+                                    df.xs(currentDay)[n] = "05:00-13:30"
+
+                            if (n, d-1, "nhwk") in shifts:
+                                if solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
+                                    df.xs(currentDay)[n] = "05:00-09:30"
+
+                            if (n, d-1, "wn") in shifts:
+                                if solver.Value(shifts[(n, d-1, "wn")]) == 1:
+                                    df.xs(currentDay)[n] = "06:00-13:30"
+                    elif pre_day:
+                        if (n, d-1, "n") in shifts:
+                            if solver.Value(shifts[(n, d-1, "n")]) == 1:
+                                df.xs(currentDay)[n] = "05:00-13:30"
+
+                        if (n, d-1, "nhwk") in shifts:
+                            if solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
+                                df.xs(currentDay)[n] = "05:00-09:30"
+
+                        if (n, d-1, "wn") in shifts:
+                            if solver.Value(shifts[(n, d-1, "wn")]) == 1:
+                                df.xs(currentDay)[n] = "06:00-13:30"
         print('')
         print('Worktime:')
         all_worktime = 0
@@ -505,6 +608,8 @@ def main():
     ax1.axis('tight')
     ax1.axis('off')
     the_table1 = ax1.table(rowLabels=ind, cellText=odf.values,colLabels=odf.columns,loc='center')
+    txt = "required free days %s" % (free_days_count)
+    fig1.text(.1,.1,txt)
     pp.savefig(fig1, bbox_inches='tight')
     plt.close()
     pp.close()
@@ -530,11 +635,11 @@ def checkConfigs():
         with open(employeeFile, 'w', encoding='UTF8') as f:
             writer = csv.writer(f)
             writer.writerow(["name","hours_per_week","overtime","available_for_shift","not_replaced_by"])
-            writer.writerow(["Paula",20,10,"d,wn","James"])
-            writer.writerow(["James",30,5,"n,d,wn",])
-            writer.writerow(["Torsten",60,15,"n,d,wn",])
-            writer.writerow(["Thira",40,0,"n,d,wn",])
-            writer.writerow(["Frank",40,5,"n,d,wn",])
+            writer.writerow(["Paula",20,10,"d,wn,nhwk","James"])
+            writer.writerow(["James",30,5,"n,d,wn,nhwk",])
+            writer.writerow(["Torsten",60,15,"n,d,wn,nhwk",])
+            writer.writerow(["Thira",40,0,"n,d,wn,nhwk",])
+            writer.writerow(["Frank",40,5,"n,d,wn,nhwk",])
 
         createdConfigs = True
 
@@ -561,6 +666,7 @@ def checkConfigs():
         config.set('Constraints', 'respect_worktime', 'True')
         config.set('Constraints', 'assure_free_days', 'True')
         config.set('Constraints', 'respect_following_employee', 'True')
+        config.set('Constraints', 'no_d_on_hwk', 'True')
 
         config.set('Shift_worktimes', 'dayShiftHours', '360')
         config.set('Shift_worktimes', 'nightShiftHoursWeekend', '1050')
