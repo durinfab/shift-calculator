@@ -15,6 +15,7 @@ from collections import defaultdict
 
 vacationFile = "vacation.csv"
 employeeFile = "employee.csv"
+prefFreeFile = "prefFree.csv"
 configFile = "config.ini"
 
 #max workstime per employee in minutes
@@ -33,6 +34,7 @@ respect_worktime = True
 assure_free_days = True
 respect_following_employee = True
 no_d_on_hwk = True
+respect_pref_free = True
 
 def main():
     print('Check configs...')
@@ -50,10 +52,21 @@ def main():
         for (k,v) in row.items():
             workerColumns[k].append(v)
 
+    prefFree_file = open(prefFreeFile, newline='')
+    prefFreeReader = csv.DictReader(prefFree_file)
+
     vacation_file = open(vacationFile, newline='')
     vacationReader = csv.DictReader(vacation_file)
+
+    global prefFreeColumns
+    prefFreeColumns = defaultdict(list)
+
     global vacationColumns
     vacationColumns = defaultdict(list)
+
+    for row in prefFreeReader:
+        for (k,v) in row.items():
+            prefFreeColumns[k].append(v)
 
     for row in vacationReader:
         for (k,v) in row.items():
@@ -357,6 +370,27 @@ def main():
                         model.Add(sum([shifts[(n,d,'nhwk')], shifts[(n,d+1,'wn')]]) <= 1)
                     
 
+    if respect_pref_free:
+        for n in workerColumns['name']:
+            toMinimize = []
+            for d in all_days:
+                if hasPrefFree(n,d):
+                    if d-1 > 1:
+                        if (n,d-1,'nhwk') in shifts:
+                            toMinimize = toMinimize.append(shifts[(n,d-1,'nhwk')])
+                        if (n,d-1,'n') in shifts:
+                            toMinimize = toMinimize.append(shifts[(n,d-1,'n')])
+                        if (n,d-1,'wn') in shifts:
+                            toMinimize = toMinimize.append(shifts[(n,d-1,'wn')])
+                    if (n,d,'nhwk') in shifts:
+                        toMinimize = toMinimize.append(shifts[(n,d,'nhwk')])
+                    if (n,d,'n') in shifts:
+                        toMinimize = toMinimize.append(shifts[(n,d,'n')])
+                    if (n,d,'wn') in shifts:
+                        toMinimize = toMinimize.append(shifts[(n,d,'wn')])
+                    if (n,d,'d') in shifts:
+                        toMinimize = toMinimize.append(shifts[(n,d,'d')])
+            model.Minimize(sum(toMinimize))
 
     #the min work which needs to be done for each employee
     min_minutes_per_employee = reqMinutes // len(workerColumns['name'])
@@ -499,12 +533,8 @@ def main():
                             if n == "Paula":
                                 print()
 
-                            last_day = True
                             if d+1 < len(list(all_days)):
                                 date = datetime.date(year, month, d+1)
-                                nextDay = date.strftime("%Y-%m-%d")
-                                last_day = False
-                            
 
                             if s == "d":
                                 if pre_day:
@@ -514,7 +544,7 @@ def main():
                                         df.xs(currentDay)[n] = "14:00-20:00"
 
                                     if (n, d-1, "nhwk") in shifts and solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
-                                        df.xs(currentDay)[n] = "05:00-09:30 / 14:00-20:00"
+                                        df.xs(currentDay)[n] = "05:00-09:00 / 14:00-20:00"
                                     else:
                                         df.xs(currentDay)[n] = "14:00-20:00"
 
@@ -539,7 +569,7 @@ def main():
 
                             if (n, d-1, "nhwk") in shifts:
                                 if solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
-                                    df.xs(currentDay)[n] = "05:00-09:30"
+                                    df.xs(currentDay)[n] = "05:00-09:00"
 
                             if (n, d-1, "wn") in shifts:
                                 if solver.Value(shifts[(n, d-1, "wn")]) == 1:
@@ -551,7 +581,7 @@ def main():
 
                         if (n, d-1, "nhwk") in shifts:
                             if solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
-                                df.xs(currentDay)[n] = "05:00-09:30"
+                                df.xs(currentDay)[n] = "05:00-09:00"
 
                         if (n, d-1, "wn") in shifts:
                             if solver.Value(shifts[(n, d-1, "wn")]) == 1:
@@ -667,11 +697,12 @@ def checkConfigs():
         config.set('Constraints', 'assure_free_days', 'True')
         config.set('Constraints', 'respect_following_employee', 'True')
         config.set('Constraints', 'no_d_on_hwk', 'True')
+        config.set('Constraints', 'respect_pref_free', 'True')
 
         config.set('Shift_worktimes', 'dayShiftHours', '360')
         config.set('Shift_worktimes', 'nightShiftHoursWeekend', '1050')
         config.set('Shift_worktimes', 'nightShiftHoursNotWeekend', '1095')
-        config.set('Shift_worktimes', 'nightShiftHoursNotWeekendHWK', '855')
+        config.set('Shift_worktimes', 'nightShiftHoursNotWeekendHWK', '825')
 
         with open(configFile, 'w') as configfile:
             config.write(configfile)
@@ -681,6 +712,20 @@ def checkConfigs():
         f = open(vacationFile)
     except IOError:
         with open(vacationFile, 'w', encoding='UTF8') as f:
+            writer = csv.writer(f)
+            writer.writerow(["employee",1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31])
+            writer.writerow(["Paula","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
+            writer.writerow(["Torsten","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
+            writer.writerow(["James","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
+            writer.writerow(["Thira","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
+            writer.writerow(["Frank","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
+
+        createdConfigs = True
+
+    try:
+        f = open(prefFreeFile)
+    except IOError:
+        with open(prefFreeFile, 'w', encoding='UTF8') as f:
             writer = csv.writer(f)
             writer.writerow(["employee",1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31])
             writer.writerow(["Paula","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
@@ -701,6 +746,10 @@ def checkConfigs():
         sys.exit()
 
 def onVacation(name, day):
+    i = vacationColumns['employee'].index(name)
+    return  vacationColumns[str(day)][i] == "yes"
+
+def hasPrefFree(name, day):
     i = vacationColumns['employee'].index(name)
     return  vacationColumns[str(day)][i] == "yes"
 
