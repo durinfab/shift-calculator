@@ -34,8 +34,11 @@ not_two_consec_nights = False
 respect_worktime = False
 assure_free_days = False
 respect_following_employee = False
+max_n_days_consec_shifts = False
 #no_d_on_hwk = True
 respect_pref_free = False
+
+max_consec_shifts = 5
 
 def main():
     print('Check configs...')
@@ -83,6 +86,7 @@ def main():
     year = int(config["General"]["year"])
     country_cc = config["General"]["country_cc"]
     subdivision = config["General"]["subdivision"]
+    max_consec_shifts =  int(config["General"]["max_consec_shifts"])
     
     one_empl_per_period = config["Constraints"]["one_empl_per_period"] == 'True'
     one_shift_per_day = config["Constraints"]["one_shift_per_day"]  == 'True'
@@ -92,6 +96,7 @@ def main():
     assure_free_days = config["Constraints"]["assure_free_days"]  == 'True'
     respect_following_employee = config["Constraints"]["respect_following_employee"]  == 'True'
     respect_no_single_dayshift = config["Constraints"]["respect_no_single_dayshift"]  == 'True'
+    max_n_days_consec_shifts = config["Constraints"]["max_n_days_consec_shifts"]  == 'True'
 
     shifts = {}
     allShifts = ['d', 'n','wn', 'nhwk']
@@ -294,6 +299,15 @@ def main():
                 model.Add(sum(tmp) == 0).OnlyEnforceIf(i)
                 collected_free_days.append(i)
                 all_emp_free_days.append(i)
+            if max_n_days_consec_shifts:
+                for bla in collected_free_days:
+                    sublist = []
+                    b = collected_free_days.index(bla)
+                    #if b+4 <= len(collected_free_days):
+                    sublist = collected_free_days[b:b+max_consec_shifts]
+                    if len(sublist) == max_consec_shifts:
+                        model.Add(sum(sublist) > 0)
+
             model.Add(sum(collected_free_days) >= free_days_count)
 
     if respect_no_single_dayshift:
@@ -311,7 +325,8 @@ def main():
                                 model.Add(shifts[(n,d,'d')] == 0).OnlyEnforceIf(shifts[(n,d-1,'wn')].Not())
                             elif (n,d,'d') in shifts:
                                 model.Add(shifts[(n,d,'d')] == 0)
-
+                        else:
+                            model.Add(shifts[(n,d,'d')] == 0)
 
     if not_two_consec_nights:
         #not two consecutive nights
@@ -412,7 +427,7 @@ def main():
             for n in workerColumns['name']:
                 # calculate avg worktime per day
 
-                maxworktimeweek = (int(hours_per_week[workerColumns['name'].index(n)]) // 7) * 7 * 60
+                maxworktimeweek = int((int(hours_per_week[workerColumns['name'].index(n)]) / 7) * 7 * 60)
 
                 avg = int(hours_per_week[workerColumns['name'].index(n)]) // 7
                 maxDevWeek = (maxworktimeweek) * (maxworktimeweek)
@@ -561,7 +576,7 @@ def main():
 
             #max worktime
             #minworktime = min(min_minutes_per_employee, int(hours_per_week[workerColumns['name'].index(n)])*60)
-            maxworktime = (int(hours_per_week[workerColumns['name'].index(n)]) // 7) * len(all_days) * 60
+            maxworktime = int((int(hours_per_week[workerColumns['name'].index(n)]) / 7) * len(all_days) * 60)
 
             print("%s should work %i minutes per month" % (n, maxworktime))
 
@@ -609,41 +624,35 @@ def main():
 
 
         print('Solution:')
-        for d in all_days:
-            date = datetime.date(year, month, d)
-            print('Day %i %s' % (d, calendar.day_name[date.weekday()]))
-            for n in allEmployees:
+        for n in allEmployees:
+            for d in all_days:
+                date = datetime.date(year, month, d)
+                print('Day %i %s' % (d, calendar.day_name[date.weekday()]))
+
+                pre_day = False
+                if d-1 > 1:
+                    pre_day = True
+
+            
                 for s in allShifts:
                     date = datetime.date(year, month, d)
                     wd = date.weekday()
                     currentDay = date.strftime("%Y-%m-%d")
 
-                    pre_day = False
-                    if d-1 > 1:
-                        pre_day = True
                     if (n, d, s) in shifts: 
                         if solver.Value(shifts[(n, d, s)]) == 1:
                             print('  Employee %s works shift %s' % (n, s))
-
-                            if n == "Paula":
-                                print()
 
                             if d+1 < len(list(all_days)):
                                 date = datetime.date(year, month, d+1)
 
                             if s == "d":
                                 if pre_day:
-                                    if (n, d-1, "n") in shifts and solver.Value(shifts[(n, d-1, "n")]):
+                                    if (n, d-1, "n") in shifts and solver.Value(shifts[(n, d-1, "n")]) == 1:
                                         df.xs(currentDay)[n] = "05:00-20:00"
-                                    else:
-                                        df.xs(currentDay)[n] = "14:00-20:00"
-
-                                    if (n, d-1, "nhwk") in shifts and solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
-                                        df.xs(currentDay)[n] = "05:00-09:00 / 14:00-20:00"
-                                    else:
-                                        df.xs(currentDay)[n] = "14:00-20:00"
-
-                                    if (n, d-1, "wn") in shifts and solver.Value(shifts[(n, d-1, "wn")]) == 1:
+                                    elif (n, d-1, "nhwk") in shifts and solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
+                                        df.xs(currentDay)[n] = "05:00-20:00"
+                                    elif (n, d-1, "wn") in shifts and solver.Value(shifts[(n, d-1, "wn")]) == 1:
                                         df.xs(currentDay)[n] = "06:00-20:00"
                                     else:
                                         df.xs(currentDay)[n] = "14:00-20:00"
@@ -655,32 +664,31 @@ def main():
                                 df.xs(currentDay)[n] = "13:00-22:00"
                             elif s == "nhwk":
                                 df.xs(currentDay)[n] = "13:00-22:00"
-                            
-                        #today no new shift
-                        elif pre_day:
-                            if (n, d-1, "n") in shifts:
-                                if solver.Value(shifts[(n, d-1, "n")]) == 1:
-                                    df.xs(currentDay)[n] = "05:00-13:30"
 
-                            if (n, d-1, "nhwk") in shifts:
-                                if solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
-                                    df.xs(currentDay)[n] = "05:00-09:00"
+                if (n, d-1, "n") in shifts and ((n, d, "d") in shifts or not doesShift(n,"d")):
+                    if solver.Value(shifts[(n, d-1, "n")]) == 1 and (not doesShift(n,"d") or solver.Value(shifts[(n, d, "d")]) == 0):
+                        df.xs(currentDay)[n] = "05:00-13:30"
 
-                            if (n, d-1, "wn") in shifts:
-                                if solver.Value(shifts[(n, d-1, "wn")]) == 1:
-                                    df.xs(currentDay)[n] = "06:00-13:30"
-                    elif pre_day:
-                        if (n, d-1, "n") in shifts:
-                            if solver.Value(shifts[(n, d-1, "n")]) == 1:
-                                df.xs(currentDay)[n] = "05:00-13:30"
 
-                        if (n, d-1, "nhwk") in shifts:
-                            if solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
-                                df.xs(currentDay)[n] = "05:00-09:00"
+                if (n, d-1, "nhwk") in shifts and ((n, d, "d") in shifts or not doesShift(n,"d")):
+                    if solver.Value(shifts[(n, d-1, "nhwk")]) == 1 and (not doesShift(n,"d") or solver.Value(shifts[(n, d, "d")]) == 0):
+                        df.xs(currentDay)[n] = "05:00-09:00"
 
-                        if (n, d-1, "wn") in shifts:
-                            if solver.Value(shifts[(n, d-1, "wn")]) == 1:
-                                df.xs(currentDay)[n] = "06:00-13:30"
+                if (n, d-1, "wn") in shifts and ((n, d, "d") in shifts or not doesShift(n,"d")):
+                    if solver.Value(shifts[(n, d-1, "wn")]) == 1 and (not doesShift(n,"d") or solver.Value(shifts[(n, d, "d")]) == 0):
+                        df.xs(currentDay)[n] = "06:00-13:30"
+                    #elif pre_day:
+                    #    if (n, d-1, "n") in shifts:
+                    #        if solver.Value(shifts[(n, d-1, "n")]) == 1:
+                    #            df.xs(currentDay)[n] = "05:00-13:30"
+
+                    #    if (n, d-1, "nhwk") in shifts:
+                    #        if solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
+                    #            df.xs(currentDay)[n] = "05:00-09:00"
+
+                    #    if (n, d-1, "wn") in shifts:
+                    #        if solver.Value(shifts[(n, d-1, "wn")]) == 1:
+                    #            df.xs(currentDay)[n] = "06:00-13:30"
         print('')
         print('Worktime:')
         all_worktime = 0
@@ -695,7 +703,7 @@ def main():
         for n in allEmployees:
             ot = int(overtime_per_employee[workerColumns['name'].index(n)])
             minutes = solver.Value(sum(worktimes_per_worker[n]))
-            newOvertime = ((minutes - ((int(hours_per_week[workerColumns['name'].index(n)]) // 7) * len(all_days) * 60)) / 60) + ot
+            newOvertime = ((minutes - int((int(hours_per_week[workerColumns['name'].index(n)]) / 7) * len(all_days) * 60)) / 60) + ot
             odf.xs("overtime")[n] = newOvertime
             print('  Employee %s has now a overtime of %d hours' % (n, newOvertime))
 
@@ -784,6 +792,7 @@ def checkConfigs():
         config.set('General', 'year', '2022')
         config.set('General', 'country_cc', 'DE')
         config.set('General', 'subdivision', 'BB')
+        config.set('General', 'max_consec_shifts', '5')
 
         config.set('Constraints', 'one_empl_per_period', 'True')
         config.set('Constraints', 'one_shift_per_day', 'True')
@@ -795,6 +804,7 @@ def checkConfigs():
         config.set('Constraints', 'no_d_on_hwk', 'True')
         config.set('Constraints', 'respect_pref_free', 'True')
         config.set('Constraints', 'respect_no_single_dayshift', 'True')
+        config.set('Constraints', 'max_n_days_consec_shifts', 'True')
 
         config.set('Shift_worktimes', 'dayShiftHours', '360')
         config.set('Shift_worktimes', 'nightShiftHoursWeekend', '1050')
