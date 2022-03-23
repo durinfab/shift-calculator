@@ -98,6 +98,8 @@ def main():
     respect_no_single_dayshift = config["Constraints"]["respect_no_single_dayshift"]  == 'True'
     max_n_days_consec_shifts = config["Constraints"]["max_n_days_consec_shifts"]  == 'True'
 
+    ttt = config["Other_dates"]["team_meetings"]
+    team_meetings = ttt.split(',')
     shifts = {}
     allShifts = ['d', 'n','wn', 'nhwk']
     allEmployees = workerColumns['name']
@@ -107,7 +109,8 @@ def main():
     nightShiftHoursNotWeekend = int(config["Shift_worktimes"]["nightShiftHoursNotWeekend"])
     nightShiftHoursNotWeekendHWK = int(config["Shift_worktimes"]["nightShiftHoursNotWeekendHWK"])
     nightShiftHoursNotWeekendHWKWithD = int(config["Shift_worktimes"]["nightShiftHoursNotWeekendHWKWithD"])
-    
+    team_meeting_time = int(config["Shift_worktimes"]["team_meeting_time"])
+
     worktimes_per_worker = {}
     worktimes_per_worker_week = {}
     print('Apply possible shifts...')
@@ -524,6 +527,27 @@ def main():
                 if onVacation(n,e):
                     worktimes_per_worker[n].append(avg)
 
+            #apply team meetings
+
+            for d in all_days:
+                if not onVacation(n,d) and d in team_meetings:
+                    ab = model.NewIntVar(0, team_meeting_time, "tm%s%i" % (n,d))
+                    if (n, d-1, 'n') in shifts:
+                        model.Add(ab == team_meeting_time).OnlyEnforceIf(shifts[(n, d-1, 'n')].Not())
+                    elif (n, d-1, 'wn') in shifts:
+                        model.Add(ab == team_meeting_time).OnlyEnforceIf(shifts[(n, d-1, 'wn')].Not())
+                    elif (n, d-1, 'nhwk') in shifts:
+                        model.Add(ab == team_meeting_time).OnlyEnforceIf(shifts[(n, d-1, 'nhwk')].Not())
+
+                    if (n, d-1, 'n') in shifts:
+                        model.Add(ab == team_meeting_time - 30).OnlyEnforceIf(shifts[(n, d-1, 'n')])
+                    elif (n, d-1, 'wn') in shifts:
+                        model.Add(ab == team_meeting_time - 30).OnlyEnforceIf(shifts[(n, d-1, 'wn')].Not())
+                    elif (n, d-1, 'nhwk') in shifts:
+                        model.Add(ab == team_meeting_time).OnlyEnforceIf(shifts[(n, d-1, 'nhwk')].Not())
+                    worktimes_per_worker[n].append(ab)
+
+
             #set worktime constraints
             #short night shift not weekend
             tmpDays = [int]
@@ -550,7 +574,11 @@ def main():
                         model.Add(sum([shifts[(n, d, 'nhwk')].Not(), shifts[(n, d+1, 'd')]]) == 2).OnlyEnforceIf(kn3)
 
                         model.Add(ab == nightShiftHoursNotWeekendHWK).OnlyEnforceIf(kn1)
-                        model.Add(ab == nightShiftHoursNotWeekendHWKWithD).OnlyEnforceIf(kn)
+                        if d+1 in team_meetings:
+                            model.Add(ab == 60).OnlyEnforceIf(kn)
+                        else:
+                            model.Add(ab == nightShiftHoursNotWeekendHWKWithD).OnlyEnforceIf(kn)
+                        
                         model.Add(ab == 0).OnlyEnforceIf(kn2)
                         model.Add(ab == 0).OnlyEnforceIf(kn3)
                     else:
@@ -651,7 +679,15 @@ def main():
             pre_day = False
             if d-1 > 1:
                 pre_day = True
+
+            is_tm = False
+            if str(d) in team_meetings:
+                is_tm = True
             for n in allEmployees:
+
+                end = ""
+                if is_tm == True and not onVacation(n,d):
+                    end += "TM "
             
                 for s in allShifts:
                     date = datetime.date(year, month, d)
@@ -661,41 +697,50 @@ def main():
                     if (n, d, s) in shifts: 
                         if solver.Value(shifts[(n, d, s)]) == 1:
                             print('  Employee %s works shift %s' % (n, s))
-
                             if d+1 < len(list(all_days)):
                                 date = datetime.date(year, month, d+1)
 
                             if s == "d":
                                 if pre_day:
                                     if (n, d-1, "n") in shifts and solver.Value(shifts[(n, d-1, "n")]) == 1:
-                                        df.xs(currentDay)[n] = "05:00-20:00"
+                                        end += "05:00-20:00"
                                     elif (n, d-1, "nhwk") in shifts and solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
-                                        df.xs(currentDay)[n] = "05:00-20:00"
+                                        end += "05:00-20:00"
                                     elif (n, d-1, "wn") in shifts and solver.Value(shifts[(n, d-1, "wn")]) == 1:
-                                        df.xs(currentDay)[n] = "06:00-20:00"
+                                        end += "06:00-20:00"
                                     else:
-                                        df.xs(currentDay)[n] = "14:00-20:00"
+                                        end += "14:00-20:00"
                                 else:
-                                    df.xs(currentDay)[n] = "14:00-20:00"
+                                    end += "14:00-20:00"
                             elif s == "n":
-                                df.xs(currentDay)[n] = "13:00-22:00"
+                                end += "13:00-22:00"
                             elif s == "wn":
-                                df.xs(currentDay)[n] = "13:00-22:00"
+                                end += "13:00-22:00"
                             elif s == "nhwk":
-                                df.xs(currentDay)[n] = "13:00-22:00"
+                                end += "13:00-22:00"
+                            df.xs(currentDay)[n] = end
 
                 if (n, d-1, "n") in shifts and ((n, d, "d") in shifts or not doesShift(n,"d")):
                     if solver.Value(shifts[(n, d-1, "n")]) == 1 and (not doesShift(n,"d") or solver.Value(shifts[(n, d, "d")]) == 0):
-                        df.xs(currentDay)[n] = "05:00-13:30"
+                        end = ""
+                        if is_tm:
+                            end += "TM "
+                        df.xs(currentDay)[n] = end + "05:00-13:30"
 
 
                 if (n, d-1, "nhwk") in shifts and ((n, d, "d") in shifts or not doesShift(n,"d")):
                     if solver.Value(shifts[(n, d-1, "nhwk")]) == 1 and (not doesShift(n,"d") or solver.Value(shifts[(n, d, "d")]) == 0):
-                        df.xs(currentDay)[n] = "05:00-09:00"
+                        end = ""
+                        if is_tm:
+                            end += "TM "
+                        df.xs(currentDay)[n] = end + "05:00-09:00"
 
                 if (n, d-1, "wn") in shifts and ((n, d, "d") in shifts or not doesShift(n,"d")):
                     if solver.Value(shifts[(n, d-1, "wn")]) == 1 and (not doesShift(n,"d") or solver.Value(shifts[(n, d, "d")]) == 0):
-                        df.xs(currentDay)[n] = "06:00-13:30"
+                        end = ""
+                        if is_tm:
+                            end += "TM "
+                        df.xs(currentDay)[n] = end + "06:00-13:30"
         print('')
         print('Worktime:')
         all_worktime = 0
@@ -820,6 +865,9 @@ def checkConfigs():
         config.set('Shift_worktimes', 'nightShiftHoursNotWeekend', '1095')
         config.set('Shift_worktimes', 'nightShiftHoursNotWeekendHWK', '825')
         config.set('Shift_worktimes', 'nightShiftHoursNotWeekendHWKWithD', '825')
+        config.set('Shift_worktimes', 'team_meeting_time', '240')
+
+        config.set('Other_dates', 'team_meetings', '1,2')
 
         with open(configFile, 'w') as configfile:
             config.write(configfile)
