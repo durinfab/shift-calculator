@@ -106,7 +106,7 @@ def main():
     nightShiftHoursWeekend = int(config["Shift_worktimes"]["nightShiftHoursWeekend"])
     nightShiftHoursNotWeekend = int(config["Shift_worktimes"]["nightShiftHoursNotWeekend"])
     nightShiftHoursNotWeekendHWK = int(config["Shift_worktimes"]["nightShiftHoursNotWeekendHWK"])
-
+    nightShiftHoursNotWeekendHWKWithD = int(config["Shift_worktimes"]["nightShiftHoursNotWeekendHWKWithD"])
     
     worktimes_per_worker = {}
     worktimes_per_worker_week = {}
@@ -416,7 +416,7 @@ def main():
     overtime_per_employee = workerColumns['overtime']
 
     #weekly
-    if respect_worktime:
+    if False:
         deviationWeek = {}
         diffWeek = {}
 
@@ -517,12 +517,12 @@ def main():
         for n in workerColumns['name']:
 
             # calculate avg worktime per day
-            avg = int(hours_per_week[workerColumns['name'].index(n)]) // 7
+            avg = int(hours_per_week[workerColumns['name'].index(n)]) // 5 * 60
 
             # add all vacations worktime
             for e in list(all_days):
                 if onVacation(n,e):
-                     worktimes_per_worker[n].append(avg)
+                    worktimes_per_worker[n].append(avg)
 
             #set worktime constraints
             #short night shift not weekend
@@ -534,8 +534,27 @@ def main():
                     tmpDays.append(e)
             for d in tmpDays:
                 if (n, d, 'nhwk') in shifts:
-                    ab = model.NewIntVar(0, nightShiftHoursNotWeekendHWK, "int%s%in" % (n,d))
-                    model.Add(ab == nightShiftHoursNotWeekendHWK).OnlyEnforceIf(shifts[(n, d, 'nhwk')])
+                    ab = model.NewIntVar(0, nightShiftHoursNotWeekendHWKWithD, "int%s%in" % (n,d))
+
+                    if (n, d+1, 'd') in shifts:
+                        kn = model.NewBoolVar("boolfollowd%s%in" % (n,d))
+                        kn1 = model.NewBoolVar("boolnotfollowd%s%in" % (n,d))
+                        kn2 = model.NewBoolVar("boolnotsfollowd%s%in" % (n,d))
+                        kn3 = model.NewBoolVar("boolnotdsfollowd%s%in" % (n,d))
+
+                        model.AddBoolXOr([kn, kn1, kn2, kn3])
+
+                        model.Add(sum([shifts[(n, d, 'nhwk')], shifts[(n, d+1, 'd')]]) == 2).OnlyEnforceIf(kn)
+                        model.Add(sum([shifts[(n, d, 'nhwk')], shifts[(n, d+1, 'd')].Not()]) == 2).OnlyEnforceIf(kn1)
+                        model.Add(sum([shifts[(n, d, 'nhwk')].Not(), shifts[(n, d+1, 'd')].Not()]) == 2).OnlyEnforceIf(kn2)
+                        model.Add(sum([shifts[(n, d, 'nhwk')].Not(), shifts[(n, d+1, 'd')]]) == 2).OnlyEnforceIf(kn3)
+
+                        model.Add(ab == nightShiftHoursNotWeekendHWK).OnlyEnforceIf(kn1)
+                        model.Add(ab == nightShiftHoursNotWeekendHWKWithD).OnlyEnforceIf(kn)
+                        model.Add(ab == 0).OnlyEnforceIf(kn2)
+                        model.Add(ab == 0).OnlyEnforceIf(kn3)
+                    else:
+                        model.Add(ab == nightShiftHoursNotWeekendHWK).OnlyEnforceIf(shifts[(n, d, 'nhwk')])
                     model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'nhwk')].Not())
                     worktimes_per_worker[n].append(ab)
 
@@ -624,15 +643,15 @@ def main():
 
 
         print('Solution:')
-        for n in allEmployees:
-            for d in all_days:
-                date = datetime.date(year, month, d)
-                print('Day %i %s' % (d, calendar.day_name[date.weekday()]))
+        
+        for d in all_days:
+            date = datetime.date(year, month, d)
+            print('Day %i %s' % (d, calendar.day_name[date.weekday()]))
 
-                pre_day = False
-                if d-1 > 1:
-                    pre_day = True
-
+            pre_day = False
+            if d-1 > 1:
+                pre_day = True
+            for n in allEmployees:
             
                 for s in allShifts:
                     date = datetime.date(year, month, d)
@@ -677,22 +696,12 @@ def main():
                 if (n, d-1, "wn") in shifts and ((n, d, "d") in shifts or not doesShift(n,"d")):
                     if solver.Value(shifts[(n, d-1, "wn")]) == 1 and (not doesShift(n,"d") or solver.Value(shifts[(n, d, "d")]) == 0):
                         df.xs(currentDay)[n] = "06:00-13:30"
-                    #elif pre_day:
-                    #    if (n, d-1, "n") in shifts:
-                    #        if solver.Value(shifts[(n, d-1, "n")]) == 1:
-                    #            df.xs(currentDay)[n] = "05:00-13:30"
-
-                    #    if (n, d-1, "nhwk") in shifts:
-                    #        if solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
-                    #            df.xs(currentDay)[n] = "05:00-09:00"
-
-                    #    if (n, d-1, "wn") in shifts:
-                    #        if solver.Value(shifts[(n, d-1, "wn")]) == 1:
-                    #            df.xs(currentDay)[n] = "06:00-13:30"
         print('')
         print('Worktime:')
         all_worktime = 0
         for n in allEmployees:
+            for aaa in worktimes_per_worker[n]:
+                print("worker %s works %i" % (n, solver.Value(aaa)))
             minutes = solver.Value(sum(worktimes_per_worker[n]))
             all_worktime += minutes
             odf.xs("actual worktime")[n] = "%i hours" % (minutes // 60)
@@ -810,6 +819,7 @@ def checkConfigs():
         config.set('Shift_worktimes', 'nightShiftHoursWeekend', '1050')
         config.set('Shift_worktimes', 'nightShiftHoursNotWeekend', '1095')
         config.set('Shift_worktimes', 'nightShiftHoursNotWeekendHWK', '825')
+        config.set('Shift_worktimes', 'nightShiftHoursNotWeekendHWKWithD', '825')
 
         with open(configFile, 'w') as configfile:
             config.write(configfile)
