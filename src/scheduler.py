@@ -37,8 +37,12 @@ respect_following_employee = False
 max_n_days_consec_shifts = False
 #no_d_on_hwk = True
 respect_pref_free = False
+max_two_consec_dayshifts = False
+force_pref_free = False
 
 max_consec_shifts = 5
+
+forced_shift_entries = []
 
 def main():
     print('Check configs...')
@@ -86,7 +90,8 @@ def main():
     year = int(config["General"]["year"])
     country_cc = config["General"]["country_cc"]
     subdivision = config["General"]["subdivision"]
-    max_consec_shifts =  int(config["General"]["max_consec_shifts"])
+    max_consec_shifts =  int(config["General"]["max_consec_shifts"]) + 1
+    overtime_modifier = float(config["General"]["overtime_modifier"])
     
     one_empl_per_period = config["Constraints"]["one_empl_per_period"] == 'True'
     one_shift_per_day = config["Constraints"]["one_shift_per_day"]  == 'True'
@@ -98,6 +103,8 @@ def main():
     respect_no_single_dayshift = config["Constraints"]["respect_no_single_dayshift"]  == 'True'
     max_n_days_consec_shifts = config["Constraints"]["max_n_days_consec_shifts"]  == 'True'
     respect_pref_free = config["Constraints"]["respect_pref_free"]  == 'True'
+    max_two_consec_dayshifts = config["Constraints"]["max_two_consec_dayshifts"]  == 'True'
+    force_pref_free = config["General"]["force_pref_free"]  == 'True'
 
     ttt = config["Other_dates"]["team_meetings"]
     team_meetings = ttt.split(',')
@@ -107,6 +114,11 @@ def main():
 
     ttt3 = config["Other_dates"]["children_holidays"]
     children_holidays = ttt3.split(',')
+
+    ttt4 = config["Other_dates"]["forced_shifts"]
+    global forced_shift_entries
+    forced_shift_entries = ttt4.split('/')
+
     shifts = {}
     allShifts = ['d', 'n','wn', 'nhwk']
     allEmployees = workerColumns['name']
@@ -191,6 +203,13 @@ def main():
                         freeEmps.append(n)
                 model.Add(sum(shifts[(a, d, allShifts[1])] for a in freeEmps) == 1)
                 reqMinutes += nightShiftHoursNotWeekend
+
+    #enter forced shifts
+    for d in all_days:
+        for n in workerColumns['name']:
+            for s in allShifts:
+                if checkForcedShifts(n,d,s) and (n,d,s) in shifts:
+                    model.Add(shifts[(n,d,s)] == 1)
 
     if respect_following_employee:
         for n in allEmployees:
@@ -296,8 +315,11 @@ def main():
                         tmp.append(shifts[(n,d-1,'nhwk')])
                     else:
                         tmp.append(shifts[(n,d-1,'wn')])
-                model.Add(sum(tmp) == 0).OnlyEnforceIf(i)
-                if respect_pref_free:
+                if str(d) in team_meetings and not onVacation(n,d):
+                    model.Add(i == 0)
+                else:
+                    model.Add(sum(tmp) == 0).OnlyEnforceIf(i)
+                if respect_pref_free and hasPrefFree(n,d):
                     prefFrees.append(i)
                 collected_free_days.append(i)
                 all_emp_free_days.append(i)
@@ -305,14 +327,16 @@ def main():
                 for bla in collected_free_days:
                     sublist = []
                     b = collected_free_days.index(bla)
-                    #if b+4 <= len(collected_free_days):
                     sublist = collected_free_days[b:b+max_consec_shifts]
                     if len(sublist) == max_consec_shifts:
                         model.Add(sum(sublist) > 0)
 
             model.Add(sum(collected_free_days) >= free_days_count)
-            if respect_pref_free:
-                model.Maximize(sum(prefFrees))
+            if respect_pref_free and len(prefFrees) != 0:
+                if force_pref_free:
+                    model.Add(sum(prefFrees) == len(prefFrees))
+                else:
+                    model.Maximize(sum(prefFrees))
 
     if respect_no_single_dayshift:
         for n in workerColumns['name']:
@@ -332,6 +356,15 @@ def main():
                                     model.Add(shifts[(n,d,'d')] == 0)
                             else:
                                 model.Add(shifts[(n,d,'d')] == 0)
+
+    if max_two_consec_dayshifts:
+        for n in allEmployees:
+            a = len(list(all_days))
+            for d in range(1,a):
+                if (n,d,'d') in shifts:
+                    if (n,d+1,'d') in shifts:
+                        if (n,d+2,'d') in shifts:
+                            model.Add(sum([shifts[(n,d,'d')], shifts[(n,d+1,'d')]]) <= 1)
 
     if not_two_consec_nights:
         #not two consecutive nights
@@ -557,7 +590,9 @@ def main():
 
             # add all vacations worktime
             for e in list(all_days):
-                if onVacation(n,e):
+                date = datetime.date(year, month, e)
+                weekday = date.weekday()
+                if onVacation(n,e) and weekday != 6 and weekday != 5:
                     worktimes_per_worker[n].append(avg)
 
             #apply team meetings
@@ -666,8 +701,10 @@ def main():
             # work with deviation
             # https://stackoverflow.com/questions/69498730/google-or-tools-employee-scheduling-minimze-the-deviation-between-how-many-ho
             maxDev = (maxworktime) * (maxworktime)
-            deviation[n] = model.NewIntVar(-1000000, maxDev, "Deviation_for_employee_%s" % (n))
+            deviation[n] = model.NewIntVar(-10000, maxDev, "Deviation_for_employee_%s" % (n))
             diff[n] = model.NewIntVar(-maxDev, maxDev,"Diff_for_employee_%s" % (n))
+
+            ot = int(ot * overtime_modifier)
             model.Add(diff[n] == sum(worktimes_per_worker[n]) - maxworktime + ot)
             
             minusDiff = model.NewIntVar(-maxDev, maxDev,"minusDiff_for_employee_%s" % (n))
@@ -875,6 +912,8 @@ def checkConfigs():
         config.set('General', 'country_cc', 'DE')
         config.set('General', 'subdivision', 'BB')
         config.set('General', 'max_consec_shifts', '5')
+        config.set('General', 'overtime_modifier', '0.5')
+        config.set('General', 'force_pref_free', 'True')
 
         config.set('Constraints', 'one_empl_per_period', 'True')
         config.set('Constraints', 'one_shift_per_day', 'True')
@@ -887,6 +926,7 @@ def checkConfigs():
         config.set('Constraints', 'respect_pref_free', 'True')
         config.set('Constraints', 'respect_no_single_dayshift', 'True')
         config.set('Constraints', 'max_n_days_consec_shifts', 'True')
+        config.set('Constraints', ' max_two_consec_dayshifts', 'True')
 
         config.set('Shift_worktimes', 'dayShiftHours', '360')
         config.set('Shift_worktimes', 'nightShiftHoursWeekend', '1050')
@@ -960,6 +1000,13 @@ def doesShift(name, shift):
     availShifts = workerColumns['available_for_shift'][i]
     avshifts = availShifts.split(',')
     return shift in avshifts
+
+def checkForcedShifts(name, day, shift):
+    for i in forced_shift_entries:
+        aa = i.split(",")
+        if name == aa[0] and str(day) == aa[1] and shift == aa[2]:
+            return True
+    return False
 
 def shouldNotRelief(empl, next):
     i = workerColumns['name'].index(empl)
