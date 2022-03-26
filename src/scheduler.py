@@ -63,26 +63,6 @@ def main():
         for (k,v) in row.items():
             workerColumns[k].append(v)
 
-    prefFree_file = open(prefFreeFile, newline='')
-    prefFreeReader = csv.DictReader(prefFree_file)
-
-    vacation_file = open(vacationFile, newline='')
-    vacationReader = csv.DictReader(vacation_file)
-
-    global prefFreeColumns
-    prefFreeColumns = defaultdict(list)
-
-    global vacationColumns
-    vacationColumns = defaultdict(list)
-
-    for row in prefFreeReader:
-        for (k,v) in row.items():
-            prefFreeColumns[k].append(v)
-
-    for row in vacationReader:
-        for (k,v) in row.items():
-            vacationColumns[k].append(v)
-
     config = configparser.ConfigParser()
     config.sections()
     with open(configFile) as f:
@@ -900,12 +880,12 @@ def checkConfigs():
     except IOError:
         with open(employeeFile, 'w', encoding='UTF8') as f:
             writer = csv.writer(f)
-            writer.writerow(["name","hours_per_week","overtime","available_for_shift","not_replaced_by"])
-            writer.writerow(["Paula",20,10,"d,wn,nhwk","James"])
-            writer.writerow(["James",30,5,"n,d,wn,nhwk",])
-            writer.writerow(["Torsten",60,15,"n,d,wn,nhwk",])
-            writer.writerow(["Thira",40,0,"n,d,wn,nhwk",])
-            writer.writerow(["Frank",40,5,"n,d,wn,nhwk",])
+            writer.writerow(["name","hours_per_week","overtime","available_for_shift","not_replaced_by","prefFree","vacation"])
+            writer.writerow(["Paula",20,10,"d,wn,nhwk","James","1,2","4,5"])
+            writer.writerow(["James",30,5,"n,d,wn,nhwk","","",""])
+            writer.writerow(["Torsten",60,15,"n,d,wn,nhwk","","",""])
+            writer.writerow(["Thira",40,0,"n,d,wn,nhwk","","",""])
+            writer.writerow(["Frank",40,5,"n,d,wn,nhwk","","",""])
 
         createdConfigs = True
 
@@ -958,34 +938,6 @@ def checkConfigs():
             config.write(configfile)
         createdConfigs = True
 
-    try:
-        f = open(vacationFile)
-    except IOError:
-        with open(vacationFile, 'w', encoding='UTF8') as f:
-            writer = csv.writer(f)
-            writer.writerow(["employee",1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31])
-            writer.writerow(["Paula","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
-            writer.writerow(["Torsten","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
-            writer.writerow(["James","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
-            writer.writerow(["Thira","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
-            writer.writerow(["Frank","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
-
-        createdConfigs = True
-
-    try:
-        f = open(prefFreeFile)
-    except IOError:
-        with open(prefFreeFile, 'w', encoding='UTF8') as f:
-            writer = csv.writer(f)
-            writer.writerow(["employee",1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31])
-            writer.writerow(["Paula","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
-            writer.writerow(["Torsten","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
-            writer.writerow(["James","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
-            writer.writerow(["Thira","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
-            writer.writerow(["Frank","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no","no"])
-
-        createdConfigs = True
-
     if createdConfigs:
         print("Template files created...")
         print("Consider to change them!")
@@ -996,10 +948,10 @@ def checkConfigs():
         sys.exit()
 
 def onVacation(name, day):
-    i = vacationColumns['employee'].index(name)
-    if day-1 < len(vacationColumns):
-        return vacationColumns[str(day)][i] == "yes"
-    return False
+    i = workerColumns['name'].index(name)
+    availShifts = workerColumns['vacation'][i]
+    avshifts = availShifts.split(',')
+    return str(day) in avshifts
 
 def doesDoubleShift(name):
     i = workerColumns['name'].index(name)
@@ -1007,8 +959,10 @@ def doesDoubleShift(name):
     return value == "yes"
 
 def hasPrefFree(name, day):
-    i = prefFreeColumns['employee'].index(name)
-    return  prefFreeColumns[str(day)][i] == "yes"
+    i = workerColumns['name'].index(name)
+    availShifts = workerColumns['prefFree'][i]
+    avshifts = availShifts.split(',')
+    return str(day) in avshifts
 
 def doesShift(name, shift):
     i = workerColumns['name'].index(name)
