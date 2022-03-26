@@ -14,9 +14,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from collections import defaultdict
 
-vacationFile = "vacation.csv"
 employeeFile = "employee.csv"
-prefFreeFile = "prefFree.csv"
 configFile = "config.ini"
 
 #max workstime per employee in minutes
@@ -124,13 +122,6 @@ def main():
 
     worktimes_per_worker = {}
     worktimes_per_worker_week = {}
-
-    #weekend_days = 0
-    #for d in all_days:
-    #    date = datetime.date(year, month, d)
-    #    weekday = date.weekday()
-    #    if weekday == 5 or weekday == 6:
-    #        weekend_days = weekend_days + 1
 
     print('Apply possible shifts...')
     #add all possible results
@@ -702,7 +693,7 @@ def main():
         dates = pd.date_range(start = d, periods = d.daysinmonth)
         df = pd.DataFrame(index=dates, columns=allEmployees)
 
-        ind = ["overtime", "actual worktime"]
+        ind = ["overtime", "actual worktime", "target worktime"]
         odf = pd.DataFrame(index=ind, columns=allEmployees)
 
 
@@ -788,6 +779,9 @@ def main():
             odf.xs("actual worktime")[n] = "%i hours" % (minutes // 60)
             print('  Employee %s works %i from minutes' % (n, minutes))
 
+        for n in allEmployees:
+            odf.xs("target worktime")[n] = "%i hours" % (int(int(hours_per_week[workerColumns['name'].index(n)]) / 5) * (len(all_days) - free_days_count))
+
         print('')
         print('New Overtime:')
         for n in allEmployees:
@@ -809,6 +803,7 @@ def main():
         for n in range(len(all_emp_free_days)):
             a = solver.Value(all_emp_free_days[n])
             if a == True:
+                
                 i += 1
                 print("  %s" % all_emp_free_days[n])
     else:
@@ -822,18 +817,14 @@ def main():
     pp = PdfPages(filestr)
     
     fig, ax =plt.subplots(figsize=(12,4))
+
     #color weekends
     colors = []
-    #tmp22 = []
-    #for a in range(1,len(allEmployees) + 1):
-    #    tmp22.append("#56666")
-    #colors.append(tmp22)
     for e in list(all_days):
         date = datetime.date(year, month, e)
         weekday = date.weekday()
         tmpa = []
         if weekday == 5 or weekday == 6:
-            #tmpa.append("w")
             for a in range(1,len(allEmployees)+1):
                 tmpa.append("#42ff9a")
             colors.append(tmpa)
@@ -950,7 +941,10 @@ def checkConfigs():
 def onVacation(name, day):
     i = workerColumns['name'].index(name)
     availShifts = workerColumns['vacation'][i]
+    if not availShifts:
+        return False
     avshifts = availShifts.split(',')
+    
     return str(day) in avshifts
 
 def doesDoubleShift(name):
@@ -962,6 +956,8 @@ def hasPrefFree(name, day):
     i = workerColumns['name'].index(name)
     availShifts = workerColumns['prefFree'][i]
     avshifts = availShifts.split(',')
+    if not avshifts:
+        return False
     return str(day) in avshifts
 
 def doesShift(name, shift):
