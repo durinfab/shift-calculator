@@ -1,6 +1,7 @@
 """Example of a simple nurse scheduling problem."""
 import subprocess
 import sys
+from turtle import color
 from ortools.sat.python import cp_model
 import csv
 import configparser
@@ -371,14 +372,6 @@ def main():
                             else:
                                 model.Add(shifts[(n,d,'d')] == 0)
 
-    if max_two_consec_dayshifts:
-        for n in allEmployees:
-            a = len(list(all_days))
-            for d in range(1,a):
-                if (n,d,'d') in shifts:
-                    if (n,d+2,'d') in shifts:
-                        model.Add(sum([shifts[(n,d,'d')], shifts[(n,d+2,'d')]]) <= 1)
-
     #apply last month night shift constrains
     if nightshift_last_month != "":
         if (nightshift_last_month,1,'n') in shifts:
@@ -690,6 +683,25 @@ def main():
 
         model.Minimize(objective)
 
+    #minimize single dayshifts
+    if False:
+        for n in allEmployees:
+            if doesShift(n, 'd'):
+                tmpbla = []
+                for d in all_days:
+                    if (n,d,'d') in shifts:
+                        tmpbla.append(shifts[(n,d,'d')])
+                if len(tmpbla) != 0:
+                    model.Add(sum(tmpbla) <= 6)
+
+    if max_two_consec_dayshifts:
+        for n in allEmployees:
+            a = len(list(all_days))
+            for d in range(1,a,2):
+                if (n,d,'d') in shifts:
+                    if (n,d+1,'d') in shifts:
+                        model.Add(sum([shifts[(n,d,'d')], shifts[(n,d+1,'d')]]) <= 1)
+
     # some checks that should avoid wrong calculation
     if max_work < reqMinutes:
         print('Warning: The current employee setup cannot fulfill the worktime requirements. They will work overtime.')
@@ -830,9 +842,31 @@ def main():
     pp = PdfPages(filestr)
     
     fig, ax =plt.subplots(figsize=(12,4))
+    #color weekends
+    colors = []
+    #tmp22 = []
+    #for a in range(1,len(allEmployees) + 1):
+    #    tmp22.append("#56666")
+    #colors.append(tmp22)
+    for e in list(all_days):
+        date = datetime.date(year, month, e)
+        weekday = date.weekday()
+        tmpa = []
+        if weekday == 5 or weekday == 6:
+            #tmpa.append("w")
+            for a in range(1,len(allEmployees)+1):
+                tmpa.append("#42ff9a")
+            colors.append(tmpa)
+        else:
+            for a in range(1,len(allEmployees)+1):
+                tmpa.append("w")
+            colors.append(tmpa)
+
+
+
     ax.axis('tight')
     ax.axis('off')
-    the_table = ax.table(rowLabels=dates.strftime('%Y-%m-%d %A'), cellText=df.values,colLabels=df.columns,loc='center')
+    the_table = ax.table(rowLabels=dates.strftime('%Y-%m-%d %A'), cellText=df.values,colLabels=df.columns,loc='center',cellColours=colors)
     pp.savefig(fig, bbox_inches='tight')
     plt.close()
 
@@ -908,13 +942,13 @@ def checkConfigs():
         config.set('Constraints', 'max_n_days_consec_shifts', 'True')
         config.set('Constraints', ' max_two_consec_dayshifts', 'True')
 
-        config.set('Shift_worktimes', 'dayShiftHours', '360')
-        config.set('Shift_worktimes', 'nightShiftHoursWeekend', '1050')
-        config.set('Shift_worktimes', 'nightShiftHoursNotWeekend', '1095')
-        config.set('Shift_worktimes', 'nightShiftHoursNotWeekendHWK', '825')
-        config.set('Shift_worktimes', 'nightShiftHoursNotWeekendWithD', '825')
-        config.set('Shift_worktimes', 'nightShiftHoursWeekendWithD', '825')
-        config.set('Shift_worktimes', 'team_meeting_time', '240')
+        config.set('Shift_worktimes', 'dayShiftHours', '36.0')
+        config.set('Shift_worktimes', 'nightShiftHoursWeekend', '105.0')
+        config.set('Shift_worktimes', 'nightShiftHoursNotWeekend', '109.5')
+        config.set('Shift_worktimes', 'nightShiftHoursNotWeekendHWK', '82.5')
+        config.set('Shift_worktimes', 'nightShiftHoursNotWeekendWithD', '82.5')
+        config.set('Shift_worktimes', 'nightShiftHoursWeekendWithD', '82.5')
+        config.set('Shift_worktimes', 'team_meeting_time', '24.0')
 
         config.set('Other_dates', 'team_meetings', '1,2')
         config.set('Other_dates', 'no_dayshift', '1,2')
