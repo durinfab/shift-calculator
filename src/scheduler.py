@@ -44,6 +44,8 @@ max_consec_shifts = 5
 
 forced_shift_entries = []
 
+nightshift_last_month = ""
+
 def main():
     print('Check configs...')
     checkConfigs()
@@ -86,8 +88,13 @@ def main():
         config.read_file(f)
 
     print('Parse config...')
+
+    global month
     month = int(config["General"]["month"])
+
+    global year
     year = int(config["General"]["year"])
+
     country_cc = config["General"]["country_cc"]
     subdivision = config["General"]["subdivision"]
     max_consec_shifts =  int(config["General"]["max_consec_shifts"]) + 1
@@ -105,6 +112,9 @@ def main():
     respect_pref_free = config["Constraints"]["respect_pref_free"]  == 'True'
     max_two_consec_dayshifts = config["Constraints"]["max_two_consec_dayshifts"]  == 'True'
     force_pref_free = config["General"]["force_pref_free"]  == 'True'
+    
+    global nightshift_last_month
+    nightshift_last_month = config["General"]["nightshift_last_month"]
 
     ttt = config["Other_dates"]["team_meetings"]
     team_meetings = ttt.split(',')
@@ -132,6 +142,14 @@ def main():
 
     worktimes_per_worker = {}
     worktimes_per_worker_week = {}
+
+    #weekend_days = 0
+    #for d in all_days:
+    #    date = datetime.date(year, month, d)
+    #    weekday = date.weekday()
+    #    if weekday == 5 or weekday == 6:
+    #        weekend_days = weekend_days + 1
+
     print('Apply possible shifts...')
     #add all possible results
     #search domain
@@ -204,6 +222,7 @@ def main():
                 model.Add(sum(shifts[(a, d, allShifts[1])] for a in freeEmps) == 1)
                 reqMinutes += nightShiftHoursNotWeekend
 
+
     #enter forced shifts
     for d in all_days:
         for n in workerColumns['name']:
@@ -224,15 +243,6 @@ def main():
 
                         if (n,d,'d') in shifts and (m,d,'wn') in shifts:
                             model.Add(shifts[(m,d,'wn')] == 0).OnlyEnforceIf(shifts[(n,d,'d')])
-
-                        #if (n,d,'wn') in shifts and (m,d+1,'d') in shifts:
-                        #    model.Add(shifts[(m,d+1,'d')] == 0).OnlyEnforceIf(shifts[(n,d,'wn')])
-
-                        #if (n,d,'nhwk') in shifts and (m,d+1,'d') in shifts:
-                        #    model.Add(shifts[(m,d+1,'d')] == 0).OnlyEnforceIf(shifts[(n,d,'nhwk')])
-
-                        #if (n,d,'n') in shifts and (m,d+1,'d') in shifts:
-                        #    model.Add(shifts[(m,d+1,'d')] == 0).OnlyEnforceIf(shifts[(n,d,'n')])
             
     if one_shift_per_day:
         #only one shift per day
@@ -317,10 +327,13 @@ def main():
                         tmp.append(shifts[(n,d-1,'wn')])
                 if str(d) in team_meetings and not onVacation(n,d):
                     model.Add(i == 0)
+
+                if d == 1 and nightshift_last_month == n:
+                    model.Add(i == 0)
                 else:
                     model.Add(sum(tmp) == 0).OnlyEnforceIf(i)
-                if respect_pref_free and hasPrefFree(n,d):
-                    prefFrees.append(i)
+                    if respect_pref_free and hasPrefFree(n,d):
+                        prefFrees.append(i)
                 collected_free_days.append(i)
                 all_emp_free_days.append(i)
             if max_n_days_consec_shifts:
@@ -365,6 +378,15 @@ def main():
                     if (n,d+1,'d') in shifts:
                         if (n,d+2,'d') in shifts:
                             model.Add(sum([shifts[(n,d,'d')], shifts[(n,d+1,'d')]]) <= 1)
+
+        #apply last month night shift constrains
+        if nightshift_last_month != "":
+            if (nightshift_last_month,1,'n') in shifts:
+                model.Add(shifts[(nightshift_last_month,1,'n')] == 0)
+            elif (nightshift_last_month,1,'wn') in shifts:
+                model.Add(shifts[(nightshift_last_month,1,'wn')] == 0)
+            elif (nightshift_last_month,1,'nhwk') in shifts:
+                model.Add(shifts[(nightshift_last_month,1,'nhwk')] == 0)
 
     if not_two_consec_nights:
         #not two consecutive nights
@@ -451,133 +473,11 @@ def main():
                 if (n,d+2,'nhwk') in shifts and (n,d+2,'d') in shifts:
                     model.Add(sum([shifts[(n,d+2,'nhwk')], shifts[(n,d+2,'d')]]) == 0).OnlyEnforceIf(i3)
 
-
-
-    if False:
-        for n in workerColumns['name']:
-            toMinimize = []
-            for d in all_days:
-                if hasPrefFree(n,d):
-                    if d-1 >= 1:
-                        if (n,d-1,'nhwk') in shifts:
-                            toMinimize.append(shifts[(n,d-1,'nhwk')])
-                        if (n,d-1,'n') in shifts:
-                            toMinimize.append(shifts[(n,d-1,'n')])
-                        if (n,d-1,'wn') in shifts:
-                            toMinimize.append(shifts[(n,d-1,'wn')])
-                    if (n,d,'nhwk') in shifts:
-                        toMinimize.append(shifts[(n,d,'nhwk')])
-                    if (n,d,'n') in shifts:
-                        toMinimize.append(shifts[(n,d,'n')])
-                    if (n,d,'wn') in shifts:
-                        toMinimize.append(shifts[(n,d,'wn')])
-                    if (n,d,'d') in shifts:
-                        toMinimize.append(shifts[(n,d,'d')])
-            model.Minimize(sum(toMinimize))
-
-    #the min work which needs to be done for each employee
-    min_minutes_per_employee = reqMinutes // len(workerColumns['name'])
-
     # the max work which all employees can fulfill
     max_work = 0
 
     hours_per_week = workerColumns['hours_per_week']
     overtime_per_employee = workerColumns['overtime']
-
-    #weekly
-    if False:
-        deviationWeek = {}
-        diffWeek = {}
-
-        start_dt = datetime.date(year, month, all_days[0])
-        end_dt = datetime.date(year, month, len(all_days))
-
-        for dt in daterange(start_dt, end_dt):
-            for n in workerColumns['name']:
-                # calculate avg worktime per day
-
-                maxworktimeweek = int((int(hours_per_week[workerColumns['name'].index(n)]) / 7) * 7 * 60)
-
-                avg = int(hours_per_week[workerColumns['name'].index(n)]) // 7
-                maxDevWeek = (maxworktimeweek) * (maxworktimeweek)
-            
-                
-                tmp = 0
-                # add all vacations worktime
-                if dt.day + 7 > len(all_days):
-                    tmp = len(all_days)
-                else:
-                    tmp = dt.day + 7
-                for e in list(range(1, tmp)):
-                    if onVacation(n,e):
-                        worktimes_per_worker_week[n].append(avg)
-
-                #set worktime constraints
-                #short night shift not weekend
-                tmpDays = [int]
-                for e in list(range(1, tmp)):
-                    date = datetime.date(year, month, e)
-                    weekday = date.weekday()
-                    if weekday == 1 or weekday == 2 or weekday == 3:
-                        tmpDays.append(e)
-                for d in tmpDays:
-                    if (n, d, 'nhwk') in shifts:
-                        ab = model.NewIntVar(0, nightShiftHoursNotWeekendHWK, "int%s%in" % (n,d))
-                        model.Add(ab == nightShiftHoursNotWeekendHWK).OnlyEnforceIf(shifts[(n, d, 'nhwk')])
-                        model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'nhwk')].Not())
-                        worktimes_per_worker_week[n].append(ab)
-
-                #long night shift not weekend
-                tmpDays = [int]
-                for e in list(range(1, tmp)):
-                    date = datetime.date(year, month, e)
-                    weekday = date.weekday()
-                    if weekday == 0 or weekday == 6:
-                        tmpDays.append(e)
-                for d in tmpDays:
-                    if (n, d, 'n') in shifts:
-                        ab = model.NewIntVar(0, nightShiftHoursNotWeekend, "int%s%ind" % (n,d))
-                        model.Add(ab == nightShiftHoursNotWeekend).OnlyEnforceIf(shifts[(n, d, 'n')])
-                        model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'n')].Not())
-                        worktimes_per_worker_week[n].append(ab)
-                    
-                #day shift every day
-                for d in list(range(1, tmp)):
-                    if (n, d, 'd') in shifts:
-                        ab = model.NewIntVar(0, dayShiftHours, "int%s%id" % (n,d))
-                        model.Add(ab == dayShiftHours).OnlyEnforceIf(shifts[(n, d, 'd')])
-                        model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'd')].Not())
-                        worktimes_per_worker_week[n].append(ab)
-
-                tmpDays = [int]
-                for e in list(range(1, tmp)):
-                    date = datetime.date(year, month, e)
-                    weekday = date.weekday()
-                    if weekday == 4 or weekday == 5:
-                        tmpDays.append(e)
-                for d in tmpDays:
-                    if (n, d, 'wn') in shifts:
-                        ab = model.NewIntVar(0, nightShiftHoursWeekend, "int%s%iwn" % (n,d))
-                        model.Add(ab == nightShiftHoursWeekend).OnlyEnforceIf(shifts[(n, d, 'wn')])
-                        model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'wn')].Not())
-                        worktimes_per_worker_week[n].append(ab)
-
-                deviationWeek[n] = model.NewIntVar(-1000000, maxDevWeek, "aaDeviation_for_employee_%s" % (n))
-                diffWeek[n] = model.NewIntVar(-maxDevWeek, maxDevWeek,"aaDiff_for_employee_%s" % (n))
-                model.Add(diffWeek[n] == sum(worktimes_per_worker_week[n]) - maxworktimeweek)
-                
-                minusDiff = model.NewIntVar(-maxDevWeek, maxDevWeek,"aaminusDiff_for_employee_%s" % (n))
-                model.Add(minusDiff == -diffWeek[n])
-                operands = [diffWeek[n], minusDiff]
-                model.AddMaxEquality(deviationWeek[n], operands)
-
-            objective = model.NewIntVar(0, len(allEmployees) * hardCap, "aaObjective")
-            model.AddMaxEquality(objective, deviationWeek.values())
-
-            model.Minimize(objective)
-
-                
-
 
     deviation = {}
     diff = {}
@@ -586,7 +486,7 @@ def main():
         for n in workerColumns['name']:
 
             # calculate avg worktime per day
-            avg = int(hours_per_week[workerColumns['name'].index(n)]) // 5 * 60
+            avg = int(int(hours_per_week[workerColumns['name'].index(n)]) / 5 * 60)
 
             # add all vacations worktime
             for e in list(all_days):
@@ -595,8 +495,31 @@ def main():
                 if onVacation(n,e) and weekday != 6 and weekday != 5:
                     worktimes_per_worker[n].append(avg)
 
-            #apply team meetings
+            #apply last month
+            if n == nightshift_last_month:
+                if isLastMonthShiftN(n,1):
+                    worktimes_per_worker[n].append(555) #9,25
+                elif isLastMonthShiftWN(n,1):
+                    worktimes_per_worker[n].append(315) #5,25
+                elif isLastMonthShiftHWK(n,1):
+                    worktimes_per_worker[n].append(510) #8,5 
 
+            #apply last month
+            ab1 = model.NewIntVar(-1000, 1, "lastmonth%s%i" % (n,d))
+            i = len(all_days)
+            if (n, len(all_days), 'n') in shifts:
+                model.Add(ab1 == -555).OnlyEnforceIf(shifts[(n, len(all_days), 'n')])
+                model.Add(ab1 == 0).OnlyEnforceIf(shifts[(n, len(all_days), 'n')].Not())
+            elif (n, len(all_days), 'wn') in shifts:
+                model.Add(ab1 == -315).OnlyEnforceIf(shifts[(n, len(all_days), 'wn')])
+                model.Add(ab1 == 0).OnlyEnforceIf(shifts[(n, len(all_days), 'wn')].Not())
+            elif (n, len(all_days), 'nhwk') in shifts:
+                model.Add(ab1 == -510).OnlyEnforceIf(shifts[(n, len(all_days), 'nhwk')])
+                model.Add(ab1 == 0).OnlyEnforceIf(shifts[(n, len(all_days), 'nhwk')].Not())
+                
+            worktimes_per_worker[n].append(ab1)
+
+            #apply team meetings
             for d in all_days:
                 if not onVacation(n,d) and d in team_meetings:
                     ab = model.NewIntVar(0, team_meeting_time, "tm%s%i" % (n,d))
@@ -688,10 +611,10 @@ def main():
                     model.Add(ab == nightShiftHoursWeekend).OnlyEnforceIf(shifts[(n, d, 'wn')])
                     model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'wn')].Not())
                     worktimes_per_worker[n].append(ab)
+                    
 
             #max worktime
-            #minworktime = min(min_minutes_per_employee, int(hours_per_week[workerColumns['name'].index(n)])*60)
-            maxworktime = int((int(hours_per_week[workerColumns['name'].index(n)]) / 7) * len(all_days) * 60)
+            maxworktime = int((int(hours_per_week[workerColumns['name'].index(n)]) / 5) * (len(all_days) - free_days_count) * 60)
 
             print("%s should work %i minutes per month" % (n, maxworktime))
 
@@ -769,18 +692,17 @@ def main():
                     if (n, d, s) in shifts:
                         if solver.Value(shifts[(n, d, s)]) == 1:
                             print('  Employee %s works shift %s' % (n, s))
-
                             
                             if d+1 < len(list(all_days)):
                                 date = datetime.date(year, month, d+1)
 
                             if s == "d":
-                                if pre_day:
-                                    if (n, d-1, "n") in shifts and solver.Value(shifts[(n, d-1, "n")]) == 1:
+                                if pre_day or isLastMonthShiftN(n,d) or isLastMonthShiftWN(n,d) or isLastMonthShiftHWK(n,d):
+                                    if ((n, d-1, "n") in shifts and solver.Value(shifts[(n, d-1, "n")])) == 1 or isLastMonthShiftN(n,d):
                                         end += "05:00-20:00"
-                                    elif (n, d-1, "nhwk") in shifts and solver.Value(shifts[(n, d-1, "nhwk")]) == 1:
+                                    elif ((n, d-1, "nhwk") in shifts and solver.Value(shifts[(n, d-1, "nhwk")]) == 1) or isLastMonthShiftHWK(n,d):
                                         end += "05:00-20:00"
-                                    elif (n, d-1, "wn") in shifts and solver.Value(shifts[(n, d-1, "wn")]) == 1:
+                                    elif ((n, d-1, "wn") in shifts and solver.Value(shifts[(n, d-1, "wn")]) == 1) or isLastMonthShiftWN(n,d):
                                         end += "06:00-20:00"
                                     else:
                                         end += "14:00-20:00"
@@ -798,21 +720,30 @@ def main():
                         end = end + "05:00-13:30"
 
 
-                if (n, d-1, "nhwk") in shifts and ((n, d, "d") in shifts or str(d) in no_dayshift or not doesShift(n, "d")):
+                elif (n, d-1, "nhwk") in shifts and ((n, d, "d") in shifts or str(d) in no_dayshift or not doesShift(n, "d")):
                     if solver.Value(shifts[(n, d-1, "nhwk")]) == 1 and (str(d) in no_dayshift or not doesShift(n, "d") or solver.Value(shifts[(n, d, "d")]) == 0):
                         end = end + "05:00-09:00"
 
-                if (n, d-1, "wn") in shifts and ((n, d, "d") in shifts or str(d) in no_dayshift or not doesShift(n, "d")):
+                elif (n, d-1, "wn") in shifts and ((n, d, "d") in shifts or str(d) in no_dayshift or not doesShift(n, "d")):
                     if solver.Value(shifts[(n, d-1, "wn")]) == 1 and (str(d) in no_dayshift or not doesShift(n, "d") or solver.Value(shifts[(n, d, "d")]) == 0):
                         end = end + "06:00-13:30"
+
+                elif (end == "" or end == "TM ") and ((isLastMonthShiftN(n,1) or isLastMonthShiftHWK(n,1) or isLastMonthShiftWN(n,1))):
+                    if isLastMonthShiftN(n,1):
+                        end += "05:00-13:30"
+                    elif isLastMonthShiftHWK(n,1):
+                        end += "05:00-09:00"
+                    elif isLastMonthShiftWN(n,1):
+                        end += "06:00-13:30"
                 df.xs(currentDay)[n] = end
         print('')
         print('Worktime:')
         all_worktime = 0
         for n in allEmployees:
-            for aaa in worktimes_per_worker[n]:
-                print("worker %s works %i" % (n, solver.Value(aaa)))
             minutes = solver.Value(sum(worktimes_per_worker[n]))
+            for aaaa in worktimes_per_worker[n]:
+                if solver.Value(aaaa) != 0:
+                    print(solver.Value(aaaa))
             all_worktime += minutes
             odf.xs("actual worktime")[n] = "%i hours" % (minutes // 60)
             print('  Employee %s works %i from minutes' % (n, minutes))
@@ -822,7 +753,7 @@ def main():
         for n in allEmployees:
             ot = int(overtime_per_employee[workerColumns['name'].index(n)])
             minutes = solver.Value(sum(worktimes_per_worker[n]))
-            newOvertime = ((minutes - int((int(hours_per_week[workerColumns['name'].index(n)]) / 7) * len(all_days) * 60)) / 60) + ot
+            newOvertime = ((minutes - int((int(hours_per_week[workerColumns['name'].index(n)]) / 5) * (len(all_days) - free_days_count) * 60)) / 60) + ot
             odf.xs("overtime")[n] = newOvertime
             print('  Employee %s has now a overtime of %d hours' % (n, newOvertime))
 
@@ -914,6 +845,7 @@ def checkConfigs():
         config.set('General', 'max_consec_shifts', '5')
         config.set('General', 'overtime_modifier', '0.5')
         config.set('General', 'force_pref_free', 'True')
+        config.set('General', 'nightshift_last_month', 'Enter')
 
         config.set('Constraints', 'one_empl_per_period', 'True')
         config.set('Constraints', 'one_shift_per_day', 'True')
@@ -1007,6 +939,54 @@ def checkForcedShifts(name, day, shift):
         if name == aa[0] and str(day) == aa[1] and shift == aa[2]:
             return True
     return False
+
+def isLastMonthShiftN(name,day):
+
+    day = int(day)
+
+    date = datetime.date(year, month, day)
+    weekday = date.weekday()
+
+    if weekday - 1 < 0:
+        weekday = 6
+    else:
+        weekday = weekday - 1
+
+    if name == nightshift_last_month and day == 1 and (weekday == 6 or weekday == 0):
+        return True
+    return False
+
+def isLastMonthShiftHWK(name,day):
+     
+    day = int(day)
+    
+    date = datetime.date(year, month, day)
+    weekday = date.weekday()
+    
+    if weekday - 1 < 0:
+        weekday = 6
+    else:
+        weekday = weekday - 1
+
+    if name == nightshift_last_month and day == 1 and (weekday == 1 or weekday == 2 or weekday == 3):
+        return True
+    return False    
+
+def isLastMonthShiftWN(name,day):
+
+    day = int(day)
+
+    date = datetime.date(year, month, day)
+    weekday = date.weekday()
+
+    if weekday - 1 < 0:
+        weekday = 6
+    else:
+        weekday = weekday - 1
+    
+    if name == nightshift_last_month and day == 1 and (weekday == 4 or weekday == 5):
+        return True
+    return False      
 
 def shouldNotRelief(empl, next):
     i = workerColumns['name'].index(empl)
