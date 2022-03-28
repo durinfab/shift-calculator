@@ -15,8 +15,8 @@ On the first startup two configuration files are created.
 ### General Section
 - *month* (int) ... Number of the month which should be covered ex. 3 eq. march
 - *2022* (int) ... Year
-- *country_cc* (string) ... Country code for your country. Used for holiday determination ex. DE eq. Germany. For  more infos check [https://pypi.org/project/holidays/](here).
-- *subdivision* (string) ... Subdivision of your country. For  more infos check [https://pypi.org/project/holidays/](here).
+- *country_cc* (string) ... Country code for your country. Used for holiday determination ex. DE eq. Germany. For  more infos check [here](https://pypi.org/project/holidays/).
+- *subdivision* (string) ... Subdivision of your country. For  more infos check [here](https://pypi.org/project/holidays/).
 - *max_consec_shifts* (int) ... max shifts/days an employee can take before a free days gets forced.
 - *overtime_modifier* (float (0,1)) ... the algorithm trys to balance the overtime of each employee for the current month entirely. If the overtime between the employees differs too much, consider lowering this value for a softer balancing. Value should be between 0 and 1 (represents percantage).
 - *force_pref_free* (bool) ... Each employee can mark preferred free days. The algorithm trys to maximize those days for each employee. Nevertheless this value forces the algorithm to fulfill all preferred free days. 
