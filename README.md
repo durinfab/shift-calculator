@@ -48,3 +48,19 @@ On the first startup two configuration files are created.
 - *team_meetings* (day list seperated by ',') ... dates of team meetings for the current month. ex. 11,24
 - *no_dayshift* (day list seperated by ',') ... dates where no day shift is needed. ex. 11,24
 - *children_holidays* (day list seperated by ',') ... dates where 'hwk' shifts are replaced by 'n' shifts. ex. 11,24
+
+## employee.csv
+
+Contains a table with all currently working employees. Each ',' seperated list needs to be surrounded by '"' Each row contains the following information:
+
+- *name* ... The name of the represented employee.
+- *hours_per_week* ... The hours per week the employee should work.
+- *overtime* ... The current overtime of the employee.
+- *available_for_shift* ... Shifts the employee wants to cover.
+- *not_replaced_by* (list of employees seperated by ',') ... Other employees the should not replace its shift. ex. "H,K"
+- *double_shift* ("yes" or "no") ... If the employee does do double shifts ('n' + 'd', 'nhwk' + 'd', 'wn' + 'd')
+- *no_single_dayshift* ("yes" or "no") ... If the employee don't want to cover single day shifts.
+- *prefFree* (day list seperated by ',') ... Days of the month the employee want to have free days ex. "13,14,15
+- *vacation* (day list seperated by ',') ... Days of the month where the employee is on vacation (Note: Weekend days need to also be covered)
+- *forced_shifts* (list of day/shift seperated by ',') ... List of shifts the employee needs to cover ex. 27/d,26/d
+
