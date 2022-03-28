@@ -36,12 +36,12 @@ On the first startup two configuration files are created.
 - *max_two_consec_dayshifts* (bool) ... Each employee should only work max two consecutive day shifts.
 
 ### Shift_worktimes Section
-- *dayshifthours* (float) ... workhours of a dayshift (ex. 3.5).
-- *nightshifthoursweekend* (float) ... workhours of a 'wn' shift.
-- *nightshifthoursnotweekend* (float) ... workhours of a 'n' shift.
-- *nightshifthoursnotweekendhwk* (float) ... workhours of a 'nhwk' shift.
-- *nightShiftHoursNotWeekendWithD* (float) ... workhours of a 'nhwk' or 'n' shift with following 'd' shift.
-- *nightShiftHoursWeekendWithD* (float) ... workhours of a 'wn' shift with following 'd' shift.
+- *dayShiftHours* (float) ... workhours of a dayshift (ex. 3.5).
+- *nightShiftHoursWeekend* (float) ... workhours of a 'wn' shift.
+- *nightShiftHoursN* (float) ... workhours of a 'n' shift.
+- *nightShiftHoursHWK* (float) ... workhours of a 'nhwk' shift.
+- *nightShiftHoursNPlusD* (float) ... workhours of a 'nhwk' or 'n' shift with following 'd' shift.
+- *nightShiftHoursWNPlusD* (float) ... workhours of a 'wn' shift with following 'd' shift.
 - *team_meeting_time* (float) ... workhours of a team meeting.
 
 ### Other_dates Section
