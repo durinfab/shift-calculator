@@ -1,6 +1,6 @@
 # Simple shift calculator
 
-This is a quite hardcoded shift calculator using Googles OR-Tools. Each day consists of shifts with different worktimes. The goal is to dynamically create shift-table for each employee. There are some additional there are some constrains which should be respected. At the moment four shfits are hardcoded.
+This is a quite hardcoded shift calculator using Googles OR-Tools. Each day consists of shifts with different worktimes. The goal is to dynamically create shift-table for each employee. There are some additional there are some constrains which should be respected. At the moment four shifts are hardcoded.
 
 ## hardcoded shifts
 - day_shift (d) ... each day ... 14:00 - 20:00
@@ -14,7 +14,7 @@ On the first startup two configuration files are created.
 ## config.ini
 ### General Section
 - *month* (int) ... Number of the month which should be covered ex. 3 eq. march
-- *2022* (int) ... Year
+- *year* (int) ... Year
 - *country_cc* (string) ... Country code for your country. Used for holiday determination ex. DE eq. Germany. For  more infos check [here](https://pypi.org/project/holidays/).
 - *subdivision* (string) ... Subdivision of your country. For  more infos check [here](https://pypi.org/project/holidays/).
 - *max_consec_shifts* (int) ... max shifts/days an employee can take before a free days gets forced.
