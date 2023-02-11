@@ -1,4 +1,5 @@
 """Example of a simple nurse scheduling problem."""
+import math
 import subprocess
 import sys
 from turtle import color
@@ -509,11 +510,11 @@ def main():
             #apply last month
             if n == nightshift_last_month:
                 if isLastMonthShiftN(n,1):
-                    worktimes_per_worker[n].append(555) #9,25
+                    worktimes_per_worker[n].append(555) #9,25 #TODO
                 elif isLastMonthShiftWN(n,1):
-                    worktimes_per_worker[n].append(315) #5,25
+                    worktimes_per_worker[n].append(315) #5,25 #TODO
                 elif isLastMonthShiftHWK(n,1):
-                    worktimes_per_worker[n].append(510) #8,5 
+                    worktimes_per_worker[n].append(510) #8,5  #TODO
 
             #apply last month
             ab1 = model.NewIntVar(-1000, 1, "lastmonth%s%i" % (n,d))
@@ -552,6 +553,8 @@ def main():
 
             #set worktime constraints
             #short night shift not weekend
+
+            #collect all day where a normal night shift is starting
             tmpDays = [int]
             for e in list(all_days):
                 date = datetime.date(year, month, e)
@@ -559,9 +562,12 @@ def main():
                 if weekday == 6 or weekday == 2 or weekday == 3:
                     tmpDays.append(e)
             for d in tmpDays:
+
+                #if n is able to do nhwk shift
                 if (n, d, 'nhwk') in shifts:
                     ab = model.NewIntVar(0, nightShiftHoursNPlusD, "int%s%in" % (n,d))
 
+                    #if n can do day shift next day too
                     if (n, d+1, 'd') in shifts:
                         kn = model.NewBoolVar("boolfollowd%s%in" % (n,d))
                         kn1 = model.NewBoolVar("boolnotfollowd%s%in" % (n,d))
@@ -570,21 +576,26 @@ def main():
 
                         model.AddBoolXOr([kn, kn1, kn2, kn3])
 
+                        #check all combinations off nhwk and day on d+1
                         model.Add(sum([shifts[(n, d, 'nhwk')], shifts[(n, d+1, 'd')]]) == 2).OnlyEnforceIf(kn)
                         model.Add(sum([shifts[(n, d, 'nhwk')], shifts[(n, d+1, 'd')].Not()]) == 2).OnlyEnforceIf(kn1)
                         model.Add(sum([shifts[(n, d, 'nhwk')].Not(), shifts[(n, d+1, 'd')].Not()]) == 2).OnlyEnforceIf(kn2)
                         model.Add(sum([shifts[(n, d, 'nhwk')].Not(), shifts[(n, d+1, 'd')]]) == 2).OnlyEnforceIf(kn3)
 
+                        #if only night
                         model.Add(ab == nightShiftHoursHWK).OnlyEnforceIf(kn1)
                         if d+1 in team_meetings:
-                            model.Add(ab == 60).OnlyEnforceIf(kn)
+                            model.Add(ab == 60).OnlyEnforceIf(kn) #TODO
                         else:
                             model.Add(ab == nightShiftHoursNPlusD).OnlyEnforceIf(kn)
                         
+                        #if n does nothing or only the next day, dont add time for this day
                         model.Add(ab == 0).OnlyEnforceIf(kn2)
                         model.Add(ab == 0).OnlyEnforceIf(kn3)
                     else:
+                        #n can do the shift nhwk, and not d on next day (if d on d+1 was never an option)
                         model.Add(ab == nightShiftHoursHWK).OnlyEnforceIf(shifts[(n, d, 'nhwk')])
+
                     model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'nhwk')].Not())
                     worktimes_per_worker[n].append(ab)
 
@@ -593,7 +604,7 @@ def main():
             for e in list(all_days):
                 date = datetime.date(year, month, e)
                 weekday = date.weekday()
-                if weekday == 4 or weekday == 5:
+                if weekday == 1 or weekday == 0:
                     tmpDays.append(e)
             for d in tmpDays:
                 if (n, d, 'n') in shifts:
@@ -628,11 +639,41 @@ def main():
                 
             #day shift every day
             for d in all_days:
-                if (n, d, 'd') in shifts:
+                if d == 0 and (n, d, 'd') in shifts:
+                    print("what")
                     ab = model.NewIntVar(0, dayShiftHours, "int%s%id" % (n,d))
                     model.Add(ab == dayShiftHours).OnlyEnforceIf(shifts[(n, d, 'd')])
                     model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'd')].Not())
                     worktimes_per_worker[n].append(ab)
+                else:
+                    if (n, d, 'd') in shifts and ((n, d-1, 'nhwk') in shifts or (n, d-1, 'n') in shifts or (n, d-1, 'wn') in shifts):
+                        if (n, d-1, 'nhwk') in shifts:
+                            ab = model.NewIntVar(0, dayShiftHours, "int%s%id" % (n,d))
+                            single = model.NewBoolVar("singleday%s%i%s" % (n,d,'nhwk'))
+                            model.Add(shifts[(n, d-1, 'nhwk')] == 0).OnlyEnforceIf(single)
+                            model.Add(ab == dayShiftHours).OnlyEnforceIf(single)
+                            model.Add(ab == 0).OnlyEnforceIf(single.Not())
+                        elif (n, d-1, 'n') in shifts:
+                            ab = model.NewIntVar(0, dayShiftHours, "int%s%id" % (n,d))
+                            single = model.NewBoolVar("singleday%s%i%s" % (n,d,'n'))
+                            model.Add(shifts[(n, d-1, 'n')] == 0).OnlyEnforceIf(single)
+                            model.Add(ab == dayShiftHours).OnlyEnforceIf(single)
+                            model.Add(ab == 0).OnlyEnforceIf(single.Not())
+                        elif (n, d-1, 'wn') in shifts:
+                            ab = model.NewIntVar(0, dayShiftHours, "int%s%id" % (n,d))
+                            single = model.NewBoolVar("singleday%s%i%s" % (n,d,'wn'))
+                            model.Add(shifts[(n, d-1, 'wn')] == 0).OnlyEnforceIf(single)
+                            model.Add(ab == dayShiftHours).OnlyEnforceIf(single)
+                            model.Add(ab == 0).OnlyEnforceIf(single.Not())
+
+                        worktimes_per_worker[n].append(ab)
+                    else:
+                        if (n, d, 'd') in shifts:
+                            ab = model.NewIntVar(0, dayShiftHours, "int%s%id" % (n,d))
+                            model.Add(ab == dayShiftHours).OnlyEnforceIf(shifts[(n, d, 'd')])
+                            model.Add(ab == 0).OnlyEnforceIf(shifts[(n, d, 'd')].Not())
+                            worktimes_per_worker[n].append(ab)
+
 
             tmpDays = [int]
             for e in list(all_days):
@@ -848,15 +889,20 @@ def main():
             odf.xs("actual worktime")[n] = "%i hours" % (minutes // 60)
             print('  Employee %s works %i from minutes' % (n, minutes))
 
+        print((len(all_days) - free_days_count))
         for n in allEmployees:
-            odf.xs("target worktime")[n] = "%i hours" % (int(int(hours_per_week[workerColumns['name'].index(n)]) / 5) * (len(all_days) - free_days_count))
+            print(n)
+            print((int(hours_per_week[workerColumns['name'].index(n)]) / 5) * (len(all_days) - free_days_count))
+            print()
+            odf.xs("target worktime")[n] = "%i hours" % (round((int(hours_per_week[workerColumns['name'].index(n)]) / 5) * (len(all_days) - free_days_count)))
 
         print('')
         print('New Overtime:')
         for n in allEmployees:
             ot = int(overtime_per_employee[workerColumns['name'].index(n)])
             minutes = solver.Value(sum(worktimes_per_worker[n]))
-            newOvertime = ((minutes - int((int(hours_per_week[workerColumns['name'].index(n)]) / 5) * (len(all_days) - free_days_count) * 60)) / 60) + ot
+            #newOvertime = ((minutes - int((int(hours_per_week[workerColumns['name'].index(n)]) / 5) * (len(all_days) - free_days_count) * 60)) / 60) + ot
+            newOvertime = ((minutes - round((int(hours_per_week[workerColumns['name'].index(n)]) / 5) * (len(all_days) - free_days_count) * 60)) / 60)
             odf.xs("overtime")[n] = newOvertime
             print('  Employee %s has now a overtime of %d hours' % (n, newOvertime))
 
